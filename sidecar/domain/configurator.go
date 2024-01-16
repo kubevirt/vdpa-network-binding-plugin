@@ -32,7 +32,6 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/istio"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 
-	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 )
 
@@ -54,9 +53,16 @@ const (
 )
 
 func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
-	network := vmispec.LookupPodNetwork(networks)
+	var network *vmschema.Network
+	for _, net := range networks {
+		if net.Multus != nil {
+			network = &net
+			break
+		}
+	}
+
 	if network == nil {
-		return nil, fmt.Errorf("pod network not found")
+		return nil, fmt.Errorf("multus network not found")
 	}
 	iface := vmispec.LookupInterfaceByName(ifaces, network.Name)
 	if iface == nil {
@@ -110,23 +116,7 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		}
 	}
 
-	var ifaceModel string
-	if p.vmiSpecIface.Model == "" {
-		ifaceModel = vmschema.VirtIO
-	} else {
-		ifaceModel = p.vmiSpecIface.Model
-	}
-
-	var ifaceModelType string
-	if ifaceModel == vmschema.VirtIO {
-		if p.options.UseVirtioTransitional {
-			ifaceModelType = "virtio-transitional"
-		} else {
-			ifaceModelType = "virtio-non-transitional"
-		}
-	} else {
-		ifaceModelType = p.vmiSpecIface.Model
-	}
+	var ifaceModelType = "virtio"
 	model := &domainschema.Model{Type: ifaceModelType}
 
 	var mac *domainschema.MAC
@@ -140,19 +130,16 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 	}
 
 	const (
-		ifaceTypeUser    = "user"
-		ifaceBackendVdpa = "vdpa"
+		ifaceTypeUser = "vdpa"
 	)
 	return &domainschema.Interface{
-		Alias:       domainschema.NewUserDefinedAlias(p.vmiSpecIface.Name),
-		Model:       model,
-		Address:     pciAddress,
-		MAC:         mac,
-		ACPI:        acpi,
-		Type:        ifaceTypeUser,
-		Source:      domainschema.InterfaceSource{Device: namescheme.PrimaryPodInterfaceName},
-		Backend:     &domainschema.InterfaceBackend{Type: ifaceBackendVdpa, LogFile: VdpaLogFilePath},
-		PortForward: p.generatePortForward(),
+		Alias:   domainschema.NewUserDefinedAlias(p.vmiSpecIface.Name),
+		Model:   model,
+		Address: pciAddress,
+		MAC:     mac,
+		ACPI:    acpi,
+		Type:    ifaceTypeUser,
+		Source:  domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
 	}, nil
 }
 
