@@ -53,6 +53,7 @@ const (
 )
 
 func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
+
 	var network *vmschema.Network
 	for _, net := range networks {
 		if net.Multus != nil {
@@ -64,6 +65,7 @@ func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema
 	if network == nil {
 		return nil, fmt.Errorf("multus network not found")
 	}
+
 	iface := vmispec.LookupInterfaceByName(ifaces, network.Name)
 	if iface == nil {
 		return nil, fmt.Errorf("no interface found")
@@ -116,7 +118,29 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		}
 	}
 
-	var ifaceModelType = "virtio"
+	/*
+		var ifaceModel string
+		if p.vmiSpecIface.Model == "" {
+			ifaceModel = vmschema.VirtIO
+		} else {
+			ifaceModel = p.vmiSpecIface.Model
+		}
+		ifaceModel := "virtio"
+	*/
+
+	ifaceModelType := "virtio"
+	/*
+		var ifaceModelType string
+		if ifaceModel == vmschema.VirtIO {
+			if p.options.UseVirtioTransitional {
+				ifaceModelType = "virtio-transitional"
+			} else {
+				ifaceModelType = "virtio-non-transitional"
+			}
+		} else {
+			ifaceModelType = p.vmiSpecIface.Model
+		}
+	*/
 	model := &domainschema.Model{Type: ifaceModelType}
 
 	var mac *domainschema.MAC
@@ -131,6 +155,7 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 
 	const (
 		ifaceTypeUser = "vdpa"
+		// ifaceBackendVdpa = "vdpa"
 	)
 	return &domainschema.Interface{
 		Alias:   domainschema.NewUserDefinedAlias(p.vmiSpecIface.Name),
@@ -140,6 +165,7 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		ACPI:    acpi,
 		Type:    ifaceTypeUser,
 		Source:  domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+		// PortForward: p.generatePortForward(),
 	}, nil
 }
 
