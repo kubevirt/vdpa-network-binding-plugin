@@ -21,6 +21,7 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	vmschema "kubevirt.io/api/core/v1"
@@ -43,6 +44,7 @@ type NetworkConfiguratorOptions struct {
 type VdpaNetworkConfigurator struct {
 	vmiSpecIface *vmschema.Interface
 	options      NetworkConfiguratorOptions
+	deviceInfo   string
 }
 
 const (
@@ -52,12 +54,13 @@ const (
 	VdpaLogFilePath = "/var/run/kubevirt/vdpa.log"
 )
 
-func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
+func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions, deviceInfo string) (*VdpaNetworkConfigurator, error) {
 
 	var network *vmschema.Network
 	for _, net := range networks {
 		if net.Multus != nil {
 			network = &net
+
 			break
 		}
 	}
@@ -77,6 +80,7 @@ func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema
 	return &VdpaNetworkConfigurator{
 		vmiSpecIface: iface,
 		options:      opts,
+		deviceInfo:   deviceInfo,
 	}, nil
 }
 
@@ -157,6 +161,7 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		ifaceTypeUser = "vdpa"
 		// ifaceBackendVdpa = "vdpa"
 	)
+
 	return &domainschema.Interface{
 		Alias:   domainschema.NewUserDefinedAlias(p.vmiSpecIface.Name),
 		Model:   model,
@@ -164,9 +169,16 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		MAC:     mac,
 		ACPI:    acpi,
 		Type:    ifaceTypeUser,
-		Source:  domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+		Source:  domainschema.InterfaceSource{Device: ExtractVdpaDevice(p.deviceInfo)},
 		// PortForward: p.generatePortForward(),
 	}, nil
+}
+
+func ExtractVdpaDevice(deviceInfo string) string {
+	expr := "/dev/vhost-vdpa-[0-9]"
+	r, _ := regexp.Compile(expr)
+	vdpaDevice := r.FindString(deviceInfo)
+	return vdpaDevice
 }
 
 func (p VdpaNetworkConfigurator) generatePortForward() []domainschema.InterfacePortForward {

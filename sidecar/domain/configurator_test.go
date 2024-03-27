@@ -33,7 +33,7 @@ var _ = Describe("pod network configurator", func() {
 	Context("generate domain spec interface", func() {
 		DescribeTable("should fail to create configurator given",
 			func(ifaces []vmschema.Interface, networks []vmschema.Network) {
-				_, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+				_, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{}, "")
 
 				Expect(err).To(HaveOccurred())
 			},
@@ -60,7 +60,7 @@ var _ = Describe("pod network configurator", func() {
 				PciAddress: "invalid-pci-address"}}
 			networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{}, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = testMutator.Mutate(&domainschema.DomainSpec{})
@@ -72,7 +72,7 @@ var _ = Describe("pod network configurator", func() {
 				ifaces := []vmschema.Interface{*iface}
 				networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
 
-				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{}, "")
 				Expect(err).ToNot(HaveOccurred())
 
 				mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
@@ -215,7 +215,7 @@ var _ = Describe("pod network configurator", func() {
 				ifaces := []vmschema.Interface{{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}}}
 				networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
 
-				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, *opts)
+				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, *opts, "")
 				Expect(err).ToNot(HaveOccurred())
 
 				mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
@@ -272,7 +272,7 @@ var _ = Describe("pod network configurator", func() {
 				Model:       &domainschema.Model{Type: "virtio-non-transitional"},
 			}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{}, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			existingIface := &domainschema.Interface{Alias: domainschema.NewUserDefinedAlias("existing-iface")}
@@ -298,7 +298,7 @@ var _ = Describe("pod network configurator", func() {
 				Model:       &domainschema.Model{Type: "virtio-non-transitional"},
 			}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{}, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			testDomSpec := &domainschema.DomainSpec{}

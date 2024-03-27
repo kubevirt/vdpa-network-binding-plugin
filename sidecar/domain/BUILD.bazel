@@ -20,6 +20,7 @@ go_test(
     srcs = [
         "configurator_test.go",
         "domain_suite_test.go",
+        "regexp_test.go",
     ],
     deps = [
         ":go_default_library",

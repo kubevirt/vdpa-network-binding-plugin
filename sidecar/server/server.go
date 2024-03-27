@@ -74,7 +74,7 @@ func (s V1alpha2Server) OnDefineDomain(_ context.Context, params *hooksV1alpha2.
 		IstioProxyInjectionEnabled: istioProxyInjectionEnabled,
 	}
 
-	vdpaConfigurator, err := domain.NewVdpaNetworkConfigurator(vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, opts)
+	vdpaConfigurator, err := domain.NewVdpaNetworkConfigurator(vmi.Spec.Domain.Devices.Interfaces, vmi.Spec.Networks, opts, params.DeviceInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vdpa configurator: %v", err)
 	}
