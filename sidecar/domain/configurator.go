@@ -20,21 +20,36 @@
 package domain
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
-	"regexp"
-	"strings"
+	"os"
+	"path"
+	"time"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	vmschema "kubevirt.io/api/core/v1"
 
 	domainschema "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 
 	"kubevirt.io/client-go/log"
 
-	"kubevirt.io/kubevirt/pkg/network/istio"
+	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
+
+	v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 )
+
+type Interface struct {
+	Network    string         `json:"network"`
+	DeviceInfo *v1.DeviceInfo `json:"deviceInfo,omitempty"`
+}
+
+type NetworkInfo struct {
+	Interfaces []Interface `json:"interfaces,omitempty"`
+}
 
 type NetworkConfiguratorOptions struct {
 	IstioProxyInjectionEnabled bool
@@ -44,7 +59,7 @@ type NetworkConfiguratorOptions struct {
 type VdpaNetworkConfigurator struct {
 	vmiSpecIface *vmschema.Interface
 	options      NetworkConfiguratorOptions
-	deviceInfo   string
+	vdpaPath     string
 }
 
 const (
@@ -53,6 +68,38 @@ const (
 	// VdpaLogFilePath vdpa log file path Kubevirt consume and record
 	VdpaLogFilePath = "/var/run/kubevirt/vdpa.log"
 )
+
+func readFileUntilNotEmpty(networkPCIMapPath string) ([]byte, error) {
+	var networkPCIMapBytes []byte
+	err := wait.PollImmediate(100*time.Millisecond, time.Second, func() (bool, error) {
+		var err error
+		networkPCIMapBytes, err = os.ReadFile(networkPCIMapPath)
+		return len(networkPCIMapBytes) > 0, err
+	})
+	return networkPCIMapBytes, err
+}
+
+func isFileEmptyAfterTimeout(err error, data []byte) bool {
+	return errors.Is(err, wait.ErrWaitTimeout) && len(data) == 0
+}
+
+func getVdpaPath(path string) (string, error) {
+	networkPCIMapBytes, err := readFileUntilNotEmpty(path)
+	if err != nil {
+		if isFileEmptyAfterTimeout(err, networkPCIMapBytes) {
+			return "", err
+		}
+		return "", nil
+	}
+
+	var result NetworkInfo
+	err = json.Unmarshal(networkPCIMapBytes, &result)
+	if err != nil {
+		return "", err
+	}
+
+	return result.Interfaces[0].DeviceInfo.Vdpa.Path, nil
+}
 
 func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions, deviceInfo string) (*VdpaNetworkConfigurator, error) {
 
@@ -69,6 +116,12 @@ func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema
 		return nil, fmt.Errorf("multus network not found")
 	}
 
+	netStatusPath := path.Join(downwardapi.MountPath, downwardapi.NetworkInfoVolumePath)
+	vdpaPath, err := getVdpaPath(netStatusPath)
+	if err != nil {
+		return nil, err
+	}
+
 	iface := vmispec.LookupInterfaceByName(ifaces, network.Name)
 	if iface == nil {
 		return nil, fmt.Errorf("no interface found")
@@ -80,7 +133,7 @@ func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema
 	return &VdpaNetworkConfigurator{
 		vmiSpecIface: iface,
 		options:      opts,
-		deviceInfo:   deviceInfo,
+		vdpaPath:     vdpaPath,
 	}, nil
 }
 
@@ -169,53 +222,7 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 		MAC:     mac,
 		ACPI:    acpi,
 		Type:    ifaceTypeUser,
-		Source:  domainschema.InterfaceSource{Device: ExtractVdpaDevice(p.deviceInfo)},
+		Source:  domainschema.InterfaceSource{Device: p.vdpaPath},
 		// PortForward: p.generatePortForward(),
 	}, nil
-}
-
-func ExtractVdpaDevice(deviceInfo string) string {
-	expr := "/dev/vhost-vdpa-[0-9]"
-	r, _ := regexp.Compile(expr)
-	vdpaDevice := r.FindString(deviceInfo)
-	return vdpaDevice
-}
-
-func (p VdpaNetworkConfigurator) generatePortForward() []domainschema.InterfacePortForward {
-	var tcpPortsRange, udpPortsRange []domainschema.InterfacePortForwardRange
-
-	if p.options.IstioProxyInjectionEnabled {
-		for _, port := range istio.ReservedPorts() {
-			tcpPortsRange = append(tcpPortsRange, domainschema.InterfacePortForwardRange{Start: uint(port), Exclude: "yes"})
-		}
-	}
-
-	const (
-		protoTCP = "tcp"
-		protoUDP = "udp"
-	)
-
-	for _, port := range p.vmiSpecIface.Ports {
-		if strings.EqualFold(port.Protocol, protoTCP) || port.Protocol == "" {
-			tcpPortsRange = append(tcpPortsRange, domainschema.InterfacePortForwardRange{Start: uint(port.Port)})
-		} else if strings.EqualFold(port.Protocol, protoUDP) {
-			udpPortsRange = append(udpPortsRange, domainschema.InterfacePortForwardRange{Start: uint(port.Port)})
-		} else {
-			log.Log.Errorf("protocol %s is not supported by vdpa", port.Protocol)
-		}
-	}
-
-	var portsFwd []domainschema.InterfacePortForward
-	if len(udpPortsRange) == 0 && len(tcpPortsRange) == 0 {
-		portsFwd = append(portsFwd, domainschema.InterfacePortForward{Proto: protoTCP})
-		portsFwd = append(portsFwd, domainschema.InterfacePortForward{Proto: protoUDP})
-	}
-	if len(tcpPortsRange) > 0 {
-		portsFwd = append(portsFwd, domainschema.InterfacePortForward{Proto: protoTCP, Ranges: tcpPortsRange})
-	}
-	if len(udpPortsRange) > 0 {
-		portsFwd = append(portsFwd, domainschema.InterfacePortForward{Proto: protoUDP, Ranges: udpPortsRange})
-	}
-
-	return portsFwd
 }
