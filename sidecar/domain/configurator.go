@@ -49,6 +49,7 @@ type VdpaNetworkConfigurator struct {
 	vmiSpecIface *vmschema.Interface
 	options      NetworkConfiguratorOptions
 	vdpaPath     string
+	macAddr      string
 }
 
 const (
@@ -103,6 +104,7 @@ func getIfaceVdpaConfigurator(iface *vmschema.Interface, opts NetworkConfigurato
 				vmiSpecIface: iface,
 				options:      opts,
 				vdpaPath:     net.DeviceInfo.Vdpa.Path,
+				macAddr:      net.MacAddress,
 			}, nil
 		}
 	}
@@ -202,6 +204,8 @@ func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, e
 	var mac *domainschema.MAC
 	if p.vmiSpecIface.MacAddress != "" {
 		mac = &domainschema.MAC{MAC: p.vmiSpecIface.MacAddress}
+	} else if p.macAddr != "" {
+		mac = &domainschema.MAC{MAC: p.macAddr}
 	}
 
 	var acpi *domainschema.ACPI
