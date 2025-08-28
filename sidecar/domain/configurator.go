@@ -37,19 +37,8 @@ import (
 	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 
-	v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
-
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
 )
-
-type Interface struct {
-	Network    string         `json:"network"`
-	DeviceInfo *v1.DeviceInfo `json:"deviceInfo,omitempty"`
-}
-
-type NetworkInfo struct {
-	Interfaces []Interface `json:"interfaces,omitempty"`
-}
 
 type NetworkConfiguratorOptions struct {
 	IstioProxyInjectionEnabled bool
@@ -92,7 +81,7 @@ func getVdpaPath(path string) (string, error) {
 		return "", nil
 	}
 
-	var result NetworkInfo
+	var result downwardapi.NetworkInfo
 	err = json.Unmarshal(networkPCIMapBytes, &result)
 	if err != nil {
 		return "", err
