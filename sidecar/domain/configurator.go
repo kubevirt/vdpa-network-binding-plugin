@@ -46,10 +46,10 @@ type NetworkConfiguratorOptions struct {
 }
 
 type VdpaNetworkConfigurator struct {
-	vmiSpecIface *vmschema.Interface
-	options      NetworkConfiguratorOptions
-	vdpaPath     string
-	macAddr      string
+	vmiSpecIfaces []*vmschema.Interface
+	options       NetworkConfiguratorOptions
+	vdpaPaths     []string
+	macAddrs      []string
 }
 
 const (
@@ -92,66 +92,81 @@ func getDownwardAPINetworkInfo() (*downwardapi.NetworkInfo, error) {
 	return result, nil
 }
 
-func getIfaceVdpaConfigurator(iface *vmschema.Interface, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
+func getIfaceVdpaConfigurator(ifaces []*vmschema.Interface, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
 	netInfo, err := getDownwardAPINetworkInfo()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, net := range netInfo.Interfaces {
-		if net.Network == iface.Name {
-			return &VdpaNetworkConfigurator{
-				vmiSpecIface: iface,
-				options:      opts,
-				vdpaPath:     net.DeviceInfo.Vdpa.Path,
-				macAddr:      net.Mac,
-			}, nil
+	var macs []string
+	var vdpaPaths []string
+
+	for _, iface := range ifaces {
+		for _, net := range netInfo.Interfaces {
+			if net.Network == iface.Name {
+				macs = append(macs, net.Mac)
+				vdpaPaths = append(vdpaPaths, net.DeviceInfo.Vdpa.Path)
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("interface %s not found in NetworkInfo", iface.Name)
+	nIf := len(ifaces)
+
+	if len(macs) != nIf || len(vdpaPaths) != nIf {
+		return nil, fmt.Errorf("not all vdpa interfaces were found in NetworkInfo")
+	}
+
+	return &VdpaNetworkConfigurator{
+		vmiSpecIfaces: ifaces,
+		options:       opts,
+		vdpaPaths:     vdpaPaths,
+		macAddrs:      macs,
+	}, nil
+
 }
 
 func NewVdpaNetworkConfigurator(ifaces []vmschema.Interface, networks []vmschema.Network, opts NetworkConfiguratorOptions) (*VdpaNetworkConfigurator, error) {
 
-	var network *vmschema.Network
+	var vdpaIfaces []*vmschema.Interface
 	for _, net := range networks {
 		if net.Multus != nil {
-			network = &net
+			iface := vmispec.LookupInterfaceByName(ifaces, net.Name)
+			if iface == nil {
+				return nil, fmt.Errorf("no interface named %s found", net.Name)
+			}
 
-			break
+			if iface.Binding == nil || iface.Binding.Name != VdpaPluginName {
+				log.Log.Infof("interface %q is not set with Vdpa network binding plugin", net.Name)
+				continue
+			}
+
+			vdpaIfaces = append(vdpaIfaces, iface)
 		}
 	}
 
-	if network == nil {
-		return nil, fmt.Errorf("multus network not found")
+	if len(vdpaIfaces) == 0 {
+		return nil, fmt.Errorf("no vdpa interface found")
 	}
 
-	iface := vmispec.LookupInterfaceByName(ifaces, network.Name)
-	if iface == nil {
-		return nil, fmt.Errorf("no interface found")
-	}
-	if iface.Binding == nil || iface.Binding != nil && iface.Binding.Name != VdpaPluginName {
-		return nil, fmt.Errorf("interface %q is not set with Vdpa network binding plugin", network.Name)
-	}
-
-	return getIfaceVdpaConfigurator(iface, opts)
+	return getIfaceVdpaConfigurator(vdpaIfaces, opts)
 }
 
 func (p VdpaNetworkConfigurator) Mutate(domainSpec *domainschema.DomainSpec) (*domainschema.DomainSpec, error) {
-	generatedIface, err := p.generateInterface()
+	generatedIfaces, err := p.generateInterfaces()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate domain interface spec: %v", err)
 	}
 
 	domainSpecCopy := domainSpec.DeepCopy()
-	if iface := lookupIfaceByAliasName(domainSpecCopy.Devices.Interfaces, p.vmiSpecIface.Name); iface != nil {
-		*iface = *generatedIface
-	} else {
-		domainSpecCopy.Devices.Interfaces = append(domainSpecCopy.Devices.Interfaces, *generatedIface)
-	}
+	for i, domainIface := range p.vmiSpecIfaces {
+		if iface := lookupIfaceByAliasName(domainSpecCopy.Devices.Interfaces, domainIface.Name); iface != nil {
+			*iface = *generatedIfaces[i]
+		} else {
+			domainSpecCopy.Devices.Interfaces = append(domainSpecCopy.Devices.Interfaces, *generatedIfaces[i])
+		}
 
-	log.Log.Infof("vdpa interface is added to domain spec successfully: %+v", generatedIface)
+		log.Log.Infof("vdpa interface %s is added to domain spec successfully: %+v", domainIface.Name, generatedIfaces)
+	}
 
 	return domainSpecCopy, nil
 }
@@ -166,66 +181,72 @@ func lookupIfaceByAliasName(ifaces []domainschema.Interface, name string) *domai
 	return nil
 }
 
-func (p VdpaNetworkConfigurator) generateInterface() (*domainschema.Interface, error) {
+func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface, error) {
 	var pciAddress *domainschema.Address
-	if p.vmiSpecIface.PciAddress != "" {
-		var err error
-		pciAddress, err = device.NewPciAddressField(p.vmiSpecIface.PciAddress)
-		if err != nil {
-			return nil, err
-		}
-	}
+	var domainInterfaces []*domainschema.Interface
 
-	/*
-		var ifaceModel string
-		if p.vmiSpecIface.Model == "" {
-			ifaceModel = vmschema.VirtIO
-		} else {
-			ifaceModel = p.vmiSpecIface.Model
-		}
-		ifaceModel := "virtio"
-	*/
-
-	ifaceModelType := "virtio"
-	/*
-		var ifaceModelType string
-		if ifaceModel == vmschema.VirtIO {
-			if p.options.UseVirtioTransitional {
-				ifaceModelType = "virtio-transitional"
-			} else {
-				ifaceModelType = "virtio-non-transitional"
+	for i, iface := range p.vmiSpecIfaces {
+		if iface.PciAddress != "" {
+			var err error
+			pciAddress, err = device.NewPciAddressField(iface.PciAddress)
+			if err != nil {
+				return nil, err
 			}
-		} else {
-			ifaceModelType = p.vmiSpecIface.Model
 		}
-	*/
-	model := &domainschema.Model{Type: ifaceModelType}
 
-	var mac *domainschema.MAC
-	if p.vmiSpecIface.MacAddress != "" {
-		mac = &domainschema.MAC{MAC: p.vmiSpecIface.MacAddress}
-	} else if p.macAddr != "" {
-		mac = &domainschema.MAC{MAC: p.macAddr}
+		/*
+			var ifaceModel string
+			if p.vmiSpecIface.Model == "" {
+				ifaceModel = vmschema.VirtIO
+			} else {
+				ifaceModel = p.vmiSpecIface.Model
+			}
+			ifaceModel := "virtio"
+		*/
+
+		ifaceModelType := "virtio"
+		/*
+			var ifaceModelType string
+			if ifaceModel == vmschema.VirtIO {
+				if p.options.UseVirtioTransitional {
+					ifaceModelType = "virtio-transitional"
+				} else {
+					ifaceModelType = "virtio-non-transitional"
+				}
+			} else {
+				ifaceModelType = p.vmiSpecIface.Model
+			}
+		*/
+		model := &domainschema.Model{Type: ifaceModelType}
+
+		var mac *domainschema.MAC
+		if iface.MacAddress != "" {
+			mac = &domainschema.MAC{MAC: iface.MacAddress}
+		} else if p.macAddrs[i] != "" {
+			mac = &domainschema.MAC{MAC: p.macAddrs[i]}
+		}
+
+		var acpi *domainschema.ACPI
+		if iface.ACPIIndex > 0 {
+			acpi = &domainschema.ACPI{Index: uint(iface.ACPIIndex)}
+		}
+
+		const (
+			ifaceTypeUser = "vdpa"
+			// ifaceBackendVdpa = "vdpa"
+		)
+
+		domainInterfaces = append(domainInterfaces, &domainschema.Interface{
+			Alias:   domainschema.NewUserDefinedAlias(iface.Name),
+			Model:   model,
+			Address: pciAddress,
+			MAC:     mac,
+			ACPI:    acpi,
+			Type:    ifaceTypeUser,
+			Source:  domainschema.InterfaceSource{Device: p.vdpaPaths[i]},
+			// PortForward: p.generatePortForward(),
+		})
 	}
 
-	var acpi *domainschema.ACPI
-	if p.vmiSpecIface.ACPIIndex > 0 {
-		acpi = &domainschema.ACPI{Index: uint(p.vmiSpecIface.ACPIIndex)}
-	}
-
-	const (
-		ifaceTypeUser = "vdpa"
-		// ifaceBackendVdpa = "vdpa"
-	)
-
-	return &domainschema.Interface{
-		Alias:   domainschema.NewUserDefinedAlias(p.vmiSpecIface.Name),
-		Model:   model,
-		Address: pciAddress,
-		MAC:     mac,
-		ACPI:    acpi,
-		Type:    ifaceTypeUser,
-		Source:  domainschema.InterfaceSource{Device: p.vdpaPath},
-		// PortForward: p.generatePortForward(),
-	}, nil
+	return domainInterfaces, nil
 }

@@ -309,5 +309,41 @@ var _ = Describe("pod network configurator", func() {
 
 			Expect(testMutator.Mutate(mutatedDomSpec)).To(Equal(mutatedDomSpec))
 		})
+
+		It("should handle multiple vdpa interfaces correctly", func() {
+			networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
+			ifaces := []vmschema.Interface{
+				{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "two", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+
+			expectedDomainIfaces := []domainschema.Interface{
+				{
+					Alias:       domainschema.NewUserDefinedAlias("default"),
+					Type:        "user",
+					Source:      domainschema.InterfaceSource{Device: "eth0"},
+					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
+					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
+					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+				},
+				{
+					Alias:       domainschema.NewUserDefinedAlias("two"),
+					Type:        "user",
+					Source:      domainschema.InterfaceSource{Device: "eth0"},
+					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
+					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
+					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+				},
+			}
+
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			testDomSpec := &domainschema.DomainSpec{}
+
+			mutatedDomSpec, err := testMutator.Mutate(testDomSpec)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
+		})
 	})
 })
