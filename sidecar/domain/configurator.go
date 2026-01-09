@@ -20,6 +20,7 @@
 package domain
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,13 +28,13 @@ import (
 	"path"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
 	vmschema "kubevirt.io/api/core/v1"
 
 	domainschema "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 
 	"kubevirt.io/client-go/log"
 
+	"kubevirt.io/kubevirt/pkg/apimachinery/wait"
 	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 
@@ -61,11 +62,13 @@ const (
 
 func readFileUntilNotEmpty(networkPCIMapPath string) ([]byte, error) {
 	var networkPCIMapBytes []byte
-	err := wait.PollImmediate(100*time.Millisecond, time.Second, func() (bool, error) {
+
+	err := wait.PollImmediately(100*time.Millisecond, time.Second, func(_ context.Context) (bool, error) {
 		var err error
 		networkPCIMapBytes, err = os.ReadFile(networkPCIMapPath)
 		return len(networkPCIMapBytes) > 0, err
 	})
+
 	return networkPCIMapBytes, err
 }
 
