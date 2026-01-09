@@ -22,7 +22,6 @@ package domain
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -72,19 +71,12 @@ func readFileUntilNotEmpty(networkPCIMapPath string) ([]byte, error) {
 	return networkPCIMapBytes, err
 }
 
-func isFileEmptyAfterTimeout(err error, data []byte) bool {
-	return errors.Is(err, wait.ErrWaitTimeout) && len(data) == 0
-}
-
 func getDownwardAPINetworkInfo() (*downwardapi.NetworkInfo, error) {
 	netStatusPath := path.Join(downwardapi.MountPath, downwardapi.NetworkInfoVolumePath)
 
 	networkPCIMapBytes, err := readFileUntilNotEmpty(netStatusPath)
 	if err != nil {
-		if isFileEmptyAfterTimeout(err, networkPCIMapBytes) {
-			return nil, err
-		}
-		return nil, nil
+		return nil, err
 	}
 
 	result := &downwardapi.NetworkInfo{}
