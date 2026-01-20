@@ -20,47 +20,74 @@
 package domain_test
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+
+	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	vmschema "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/domain"
 
+	"kubevirt.io/kubevirt/pkg/network/downwardapi"
 	domainschema "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
 
+func newNetInfo(networkName, vdpaPath, mac string) *downwardapi.NetworkInfo {
+	return &downwardapi.NetworkInfo{
+		Interfaces: []downwardapi.Interface{
+			{
+				Network: networkName,
+				Mac:     mac,
+				DeviceInfo: &networkv1.DeviceInfo{
+					Type: networkv1.DeviceInfoTypeVDPA,
+					Vdpa: &networkv1.VdpaDevice{Path: vdpaPath},
+				},
+			},
+		},
+	}
+}
+
 var _ = Describe("pod network configurator", func() {
 	Context("generate domain spec interface", func() {
+		//  These tests validate how the vDPA network configurator mutates the domain XML
+		//  for different VMI interface configurations, using test helpers to avoid filesystem dependencies.
 		DescribeTable("should fail to create configurator given",
 			func(ifaces []vmschema.Interface, networks []vmschema.Network) {
-				_, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+				netInfo := &downwardapi.NetworkInfo{}
+				_, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 
 				Expect(err).To(HaveOccurred())
 			},
 			Entry("no pod network",
 				nil,
-				[]vmschema.Network{{Name: "default", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}},
+				[]vmschema.Network{{Name: "net-without-iface", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}},
 			),
 			Entry("no corresponding iface",
-				[]vmschema.Interface{{Name: "not-default", Binding: &vmschema.PluginBinding{Name: "vdpa"}}},
-				[]vmschema.Network{*vmschema.DefaultPodNetwork()},
+				[]vmschema.Interface{{Name: "vdpa-mismatch", Binding: &vmschema.PluginBinding{Name: "vdpa"}}},
+				[]vmschema.Network{{Name: "net-mismatch", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}},
 			),
 			Entry("interface with no vdpa binding method",
-				[]vmschema.Interface{{Name: "default", InterfaceBindingMethod: vmschema.InterfaceBindingMethod{Bridge: &vmschema.InterfaceBridge{}}}},
-				[]vmschema.Network{*vmschema.DefaultPodNetwork()},
+				[]vmschema.Interface{{Name: "bridge-net", InterfaceBindingMethod: vmschema.InterfaceBindingMethod{Bridge: &vmschema.InterfaceBridge{}}}},
+				[]vmschema.Network{{Name: "bridge-net", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}},
 			),
 			Entry("interface with no vdpa binding plugin",
-				[]vmschema.Interface{{Name: "default", Binding: &vmschema.PluginBinding{Name: "no-vdpa"}}},
-				[]vmschema.Network{*vmschema.DefaultPodNetwork()},
+				[]vmschema.Interface{{Name: "no-vdpa-plugin", Binding: &vmschema.PluginBinding{Name: "no-vdpa"}}},
+				[]vmschema.Network{{Name: "no-vdpa-plugin", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}},
 			),
 		)
 
 		It("should fail given interface with invalid PCI address", func() {
-			ifaces := []vmschema.Interface{{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
+			ifaces := []vmschema.Interface{{Name: "invalid-pci", Binding: &vmschema.PluginBinding{Name: "vdpa"},
 				PciAddress: "invalid-pci-address"}}
-			networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
+			networks := []vmschema.Network{{Name: "invalid-pci", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}}
+			// netInfo is only required so NewVdpaNetworkConfigurator can pair the vDPA iface;
+			// this test validates guest PCI address parsing, not host VF's PCI address.
+			netInfo := newNetInfo("invalid-pci", "/dev/vhost-vdpa-0", "")
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = testMutator.Mutate(&domainschema.DomainSpec{})
@@ -68,11 +95,12 @@ var _ = Describe("pod network configurator", func() {
 		})
 
 		DescribeTable("should add interface to domain spec given iface with",
-			func(iface *vmschema.Interface, expectedDomainIface *domainschema.Interface) {
+			func(iface *vmschema.Interface, expectedDomainIface *domainschema.Interface, macFromDeviceInfo string) {
 				ifaces := []vmschema.Interface{*iface}
-				networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
+				networks := []vmschema.Network{{Name: iface.Name, NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}}
+				netInfo := newNetInfo(iface.Name, "/dev/vhost-vdpa-0", macFromDeviceInfo)
 
-				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 				Expect(err).ToNot(HaveOccurred())
 
 				mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
@@ -80,202 +108,101 @@ var _ = Describe("pod network configurator", func() {
 				Expect(mutatedDomSpec.Devices.Interfaces).To(Equal([]domainschema.Interface{*expectedDomainIface}))
 			},
 			Entry("vdpa binding plugin",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				&vmschema.Interface{Name: "vdpa-minimal", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
 				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-minimal"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    nil,
 				},
+				"",
 			),
 			Entry("PCI address",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
+				&vmschema.Interface{Name: "vdpa-with-pci", Binding: &vmschema.PluginBinding{Name: "vdpa"},
 					PciAddress: "0000:02:02.0"},
 				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
-					Address:     &domainschema.Address{Type: "pci", Domain: "0x0000", Bus: "0x02", Slot: "0x02", Function: "0x0"},
+					Alias:   domainschema.NewUserDefinedAlias("vdpa-with-pci"),
+					Type:    "vdpa",
+					Source:  domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:   &domainschema.Model{Type: "virtio"},
+					Address: &domainschema.Address{Type: "pci", Domain: "0x0000", Bus: "0x02", Slot: "0x02", Function: "0x0"},
+					MAC:     nil,
 				},
+				"",
 			),
 			Entry("MAC address",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
+				&vmschema.Interface{Name: "vdpa-with-mac", Binding: &vmschema.PluginBinding{Name: "vdpa"},
 					MacAddress: "02:02:02:02:02:02"},
 				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
-					MAC:         &domainschema.MAC{MAC: "02:02:02:02:02:02"},
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-with-mac"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    &domainschema.MAC{MAC: "02:02:02:02:02:02"},
 				},
+				"",
 			),
 			Entry("ACPI address",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
+				&vmschema.Interface{Name: "vdpa-with-acpi", Binding: &vmschema.PluginBinding{Name: "vdpa"},
 					ACPIIndex: 2},
 				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
-					ACPI:        &domainschema.ACPI{Index: uint(2)},
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-with-acpi"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					ACPI:   &domainschema.ACPI{Index: uint(2)},
 				},
+				"",
 			),
-			Entry("non virtio model",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
-					Model: "e1000",
+			Entry("MAC address from deviceinfo",
+				&vmschema.Interface{Name: "deviceinfo-mac", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				&domainschema.Interface{
+					Alias:  domainschema.NewUserDefinedAlias("deviceinfo-mac"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    &domainschema.MAC{MAC: "de:ad:00:00:be:af"},
+				},
+				"de:ad:00:00:be:af",
+			),
+			Entry("VMI MAC should override DeviceInfo MAC",
+				&vmschema.Interface{Name: "mac-override", Binding: &vmschema.PluginBinding{Name: "vdpa"},
+					MacAddress: "02:02:02:02:02:02",
 				},
 				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "e1000"},
+					Alias:  domainschema.NewUserDefinedAlias("mac-override"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    &domainschema.MAC{MAC: "02:02:02:02:02:02"},
 				},
-			),
-			Entry("tcp ports (should forward tcp ports only)",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
-					Ports: []vmschema.Port{{Protocol: "TCP", Port: 1}, {Protocol: "TCP", Port: 4}},
-				},
-				&domainschema.Interface{
-					Alias:   domainschema.NewUserDefinedAlias("default"),
-					Type:    "user",
-					Source:  domainschema.InterfaceSource{Device: "eth0"},
-					Backend: &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					Model:   &domainschema.Model{Type: "virtio-non-transitional"},
-					PortForward: []domainschema.InterfacePortForward{
-						{
-							Proto: "tcp",
-							Ranges: []domainschema.InterfacePortForwardRange{
-								{Start: 1}, {Start: 4},
-							},
-						},
-					},
-				},
-			),
-			Entry("udp ports (should forward udp ports only)",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
-					Ports: []vmschema.Port{{Protocol: "UDP", Port: 2}, {Protocol: "UDP", Port: 3}},
-				},
-				&domainschema.Interface{
-					Alias:   domainschema.NewUserDefinedAlias("default"),
-					Type:    "user",
-					Source:  domainschema.InterfaceSource{Device: "eth0"},
-					Backend: &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					Model:   &domainschema.Model{Type: "virtio-non-transitional"},
-					PortForward: []domainschema.InterfacePortForward{
-						{
-							Proto: "udp",
-							Ranges: []domainschema.InterfacePortForwardRange{
-								{Start: 2}, {Start: 3},
-							},
-						},
-					},
-				},
-			),
-			Entry("both tcp and udp ports",
-				&vmschema.Interface{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"},
-					Ports: []vmschema.Port{{Port: 1}, {Protocol: "UdP", Port: 2}, {Protocol: "UDP", Port: 3}, {Protocol: "tcp", Port: 4}},
-				},
-				&domainschema.Interface{
-					Alias:   domainschema.NewUserDefinedAlias("default"),
-					Type:    "user",
-					Source:  domainschema.InterfaceSource{Device: "eth0"},
-					Backend: &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					Model:   &domainschema.Model{Type: "virtio-non-transitional"},
-					PortForward: []domainschema.InterfacePortForward{
-						{
-							Proto: "tcp",
-							Ranges: []domainschema.InterfacePortForwardRange{
-								{Start: 1}, {Start: 4},
-							},
-						},
-						{
-							Proto: "udp",
-							Ranges: []domainschema.InterfacePortForwardRange{
-								{Start: 2}, {Start: 3},
-							},
-						},
-					},
-				},
-			),
-		)
-
-		DescribeTable("should add interface to domain spec given iface given the option",
-			func(opts *domain.NetworkConfiguratorOptions, expectedDomainIface *domainschema.Interface) {
-				ifaces := []vmschema.Interface{{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}}}
-				networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
-
-				testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, *opts)
-				Expect(err).ToNot(HaveOccurred())
-
-				mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
-				Expect(err).ToNot(HaveOccurred())
-				Expect(mutatedDomSpec.Devices.Interfaces).To(Equal([]domainschema.Interface{*expectedDomainIface}))
-			},
-			Entry("virtio transitional enabled",
-				&domain.NetworkConfiguratorOptions{UseVirtioTransitional: true},
-				&domainschema.Interface{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-transitional"},
-				},
-			),
-			Entry("istio proxy injection enabled",
-				&domain.NetworkConfiguratorOptions{IstioProxyInjectionEnabled: true},
-				&domainschema.Interface{
-					Alias:   domainschema.NewUserDefinedAlias("default"),
-					Type:    "user",
-					Source:  domainschema.InterfaceSource{Device: "eth0"},
-					Backend: &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					Model:   &domainschema.Model{Type: "virtio-non-transitional"},
-					PortForward: []domainschema.InterfacePortForward{
-						{Proto: "tcp", Ranges: []domainschema.InterfacePortForwardRange{
-							{Start: 15000, Exclude: "yes"}, {Start: 15001, Exclude: "yes"},
-							{Start: 15004, Exclude: "yes"}, {Start: 15006, Exclude: "yes"},
-							{Start: 15008, Exclude: "yes"}, {Start: 15009, Exclude: "yes"},
-							{Start: 15020, Exclude: "yes"}, {Start: 15021, Exclude: "yes"},
-							{Start: 15053, Exclude: "yes"}, {Start: 15090, Exclude: "yes"},
-						}}},
-				},
+				"de:ad:00:00:be:af",
 			),
 		)
 
 		It("should not override other interfaces", func() {
-			networks := []vmschema.Network{
-				*vmschema.DefaultPodNetwork(),
-				{Name: "secondary", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{NetworkName: "sec"}}},
-			}
 			ifaces := []vmschema.Interface{
-				{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
-				{Name: "secondary", InterfaceBindingMethod: vmschema.InterfaceBindingMethod{Bridge: &vmschema.InterfaceBridge{}}},
+				{Name: "vdpa-iface", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "bridge-iface", InterfaceBindingMethod: vmschema.InterfaceBindingMethod{Bridge: &vmschema.InterfaceBridge{}}},
 			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-iface", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "bridge-iface", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+			netInfo := newNetInfo("vdpa-iface", "/dev/vhost-vdpa-0", "")
 
 			expectedDomainIface := &domainschema.Interface{
-				Alias:       domainschema.NewUserDefinedAlias("default"),
-				Type:        "user",
-				Source:      domainschema.InterfaceSource{Device: "eth0"},
-				Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-				PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-				Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+				Alias:  domainschema.NewUserDefinedAlias("vdpa-iface"),
+				Type:   "vdpa",
+				Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+				Model:  &domainschema.Model{Type: "virtio"},
 			}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
-			existingIface := &domainschema.Interface{Alias: domainschema.NewUserDefinedAlias("existing-iface")}
+			existingIface := &domainschema.Interface{Alias: domainschema.NewUserDefinedAlias("bridge-iface")}
 			testDomSpec := &domainschema.DomainSpec{
 				Devices: domainschema.Devices{
 					Interfaces: []domainschema.Interface{*existingIface}}}
@@ -286,64 +213,144 @@ var _ = Describe("pod network configurator", func() {
 		})
 
 		It("should set domain interface correctly when executed more than once", func() {
-			networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
-			ifaces := []vmschema.Interface{{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}}}
+			ifaces := []vmschema.Interface{{Name: "vdpa-idempotent", Binding: &vmschema.PluginBinding{Name: "vdpa"}}}
+			networks := []vmschema.Network{{Name: "vdpa-idempotent", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}}}
+			netInfo := newNetInfo("vdpa-idempotent", "/dev/vhost-vdpa-0", "")
 
 			expectedDomainIface := &domainschema.Interface{
-				Alias:       domainschema.NewUserDefinedAlias("default"),
-				Type:        "user",
-				Source:      domainschema.InterfaceSource{Device: "eth0"},
-				Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-				PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-				Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+				Alias:  domainschema.NewUserDefinedAlias("vdpa-idempotent"),
+				Type:   "vdpa",
+				Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+				Model:  &domainschema.Model{Type: "virtio"},
+				MAC:    nil,
 			}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
-			testDomSpec := &domainschema.DomainSpec{}
+			firstResult, err := testMutator.Mutate(&domainschema.DomainSpec{})
 
-			mutatedDomSpec, err := testMutator.Mutate(testDomSpec)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal([]domainschema.Interface{*expectedDomainIface}))
+			Expect(firstResult.Devices.Interfaces).To(Equal([]domainschema.Interface{*expectedDomainIface}))
 
-			Expect(testMutator.Mutate(mutatedDomSpec)).To(Equal(mutatedDomSpec))
+			secondResult, err := testMutator.Mutate(firstResult)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(secondResult).To(Equal(firstResult))
 		})
 
-		It("should handle multiple vdpa interfaces correctly", func() {
-			networks := []vmschema.Network{*vmschema.DefaultPodNetwork()}
+		It("should correctly pair multiple interfaces with MAC and vhost-vdpa path from netInfo", func() {
+			netInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{
+					{
+						Network: "vdpa-net-1",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+						},
+						Mac: "aa:bb:cc:dd:ee:01",
+					},
+					{
+						Network: "vdpa-net-2",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-1"},
+						},
+						Mac: "aa:bb:cc:dd:ee:02",
+					},
+				},
+			}
+
 			ifaces := []vmschema.Interface{
-				{Name: "default", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
-				{Name: "two", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-1", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-2", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-1", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-2", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
 			}
 
 			expectedDomainIfaces := []domainschema.Interface{
 				{
-					Alias:       domainschema.NewUserDefinedAlias("default"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-1"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-0"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    &domainschema.MAC{MAC: "aa:bb:cc:dd:ee:01"},
 				},
 				{
-					Alias:       domainschema.NewUserDefinedAlias("two"),
-					Type:        "user",
-					Source:      domainschema.InterfaceSource{Device: "eth0"},
-					Backend:     &domainschema.InterfaceBackend{Type: "vdpa", LogFile: domain.VdpaLogFilePath},
-					PortForward: []domainschema.InterfacePortForward{{Proto: "tcp"}, {Proto: "udp"}},
-					Model:       &domainschema.Model{Type: "virtio-non-transitional"},
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-2"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: "/dev/vhost-vdpa-1"},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MAC:    &domainschema.MAC{MAC: "aa:bb:cc:dd:ee:02"},
 				},
 			}
 
-			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, domain.NetworkConfiguratorOptions{})
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
-			testDomSpec := &domainschema.DomainSpec{}
-
-			mutatedDomSpec, err := testMutator.Mutate(testDomSpec)
+			mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
+		})
+
+		It("should fail when not all vdpa interfaces are found in netInfo", func() {
+			ifaces := []vmschema.Interface{
+				{Name: "vdpa-net-1", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-2", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-1", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-2", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+
+			netInfo := newNetInfo("vdpa-net-1", "/dev/vhost-vdpa-0", "")
+
+			_, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, domain.NetworkConfiguratorOptions{})
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("GetDownwardAPINetworkInfo file handling", func() {
+		var (
+			tempDir         string
+			networkInfoPath string
+		)
+
+		BeforeEach(func() {
+			tempDir = GinkgoT().TempDir()
+			networkInfoPath = filepath.Join(tempDir, "network-info")
+		})
+
+		It("should read and unmarshal network-info file", func() {
+			expectedNetworkInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{{
+					Network: "vdpa-net",
+					Mac:     "02:02:02:02:02:02",
+					DeviceInfo: &networkv1.DeviceInfo{
+						Type: networkv1.DeviceInfoTypeVDPA,
+						Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+					},
+				}},
+			}
+			b, err := json.Marshal(expectedNetworkInfo)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(os.WriteFile(networkInfoPath, b, 0644)).To(Succeed())
+
+			actualNetworkInfo, err := domain.GetDownwardAPINetworkInfo(networkInfoPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actualNetworkInfo).To(Equal(expectedNetworkInfo))
+		})
+
+		It("should return an error for invalid JSON content", func() {
+			Expect(os.WriteFile(networkInfoPath, []byte("{invalid"), 0644)).To(Succeed())
+			_, err := domain.GetDownwardAPINetworkInfo(networkInfoPath)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should return an error if the file does not exist", func() {
+			_, err := domain.GetDownwardAPINetworkInfo(filepath.Join(tempDir, "does-not-exist"))
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })
