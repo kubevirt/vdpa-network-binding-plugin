@@ -179,31 +179,6 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 			}
 		}
 
-		/*
-			var ifaceModel string
-			if p.vmiSpecIface.Model == "" {
-				ifaceModel = vmschema.VirtIO
-			} else {
-				ifaceModel = p.vmiSpecIface.Model
-			}
-			ifaceModel := "virtio"
-		*/
-
-		ifaceModelType := "virtio"
-		/*
-			var ifaceModelType string
-			if ifaceModel == vmschema.VirtIO {
-				if p.options.UseVirtioTransitional {
-					ifaceModelType = "virtio-transitional"
-				} else {
-					ifaceModelType = "virtio-non-transitional"
-				}
-			} else {
-				ifaceModelType = p.vmiSpecIface.Model
-			}
-		*/
-		model := &domainschema.Model{Type: ifaceModelType}
-
 		var mac *domainschema.MAC
 		if iface.MacAddress != "" {
 			mac = &domainschema.MAC{MAC: iface.MacAddress}
@@ -216,20 +191,14 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 			acpi = &domainschema.ACPI{Index: uint(iface.ACPIIndex)}
 		}
 
-		const (
-			ifaceTypeUser = "vdpa"
-			// ifaceBackendVdpa = "vdpa"
-		)
-
 		domainInterfaces = append(domainInterfaces, &domainschema.Interface{
 			Alias:   domainschema.NewUserDefinedAlias(iface.Name),
-			Model:   model,
+			Model:   &domainschema.Model{Type: "virtio"},
 			Address: pciAddress,
 			MAC:     mac,
 			ACPI:    acpi,
-			Type:    ifaceTypeUser,
+			Type:    "vdpa",
 			Source:  domainschema.InterfaceSource{Device: p.vdpaPaths[i]},
-			// PortForward: p.generatePortForward(),
 		})
 	}
 
