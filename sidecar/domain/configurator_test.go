@@ -358,6 +358,65 @@ var _ = Describe("pod network configurator", func() {
 			// the symlink path should remain the same
 			Expect(result2.Devices.Interfaces).To(Equal([]domainschema.Interface{*expectedDomainIface1}))
 		})
+
+		It("should assign guest pci addresses correctly if one of them is empty", func() {
+			netInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{
+					{
+						Network: "vdpa-net-1",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+						},
+					},
+					{
+						Network: "vdpa-net-2",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-1"},
+						},
+					},
+				},
+			}
+
+			ifaces := []vmschema.Interface{
+				{Name: "vdpa-net-1", Binding: &vmschema.PluginBinding{Name: "vdpa"}, PciAddress: "0000:65:00.1"},
+				{Name: "vdpa-net-2", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-1", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-2", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+
+			expectedDomainIfaces := []domainschema.Interface{
+				{
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-1"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: slPath("vdpa-net-1")},
+					Model:  &domainschema.Model{Type: "virtio"},
+					Address: &domainschema.Address{
+						Type:     "pci",
+						Domain:   "0x0000",
+						Bus:      "0x65",
+						Slot:     "0x00",
+						Function: "0x1",
+					},
+				},
+				{
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-2"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: slPath("vdpa-net-2")},
+					Model:  &domainschema.Model{Type: "virtio"},
+				},
+			}
+
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, DEFAULT_CONT_NAME)
+			Expect(err).ToNot(HaveOccurred())
+
+			mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
+		})
 	})
 
 	Context("GetDownwardAPINetworkInfo file handling", func() {

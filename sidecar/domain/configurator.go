@@ -173,10 +173,10 @@ func lookupIfaceByAliasName(ifaces []domainschema.Interface, name string) *domai
 }
 
 func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface, error) {
-	var pciAddress *domainschema.Address
 	var domainInterfaces []*domainschema.Interface
 
 	for _, cfg := range p.vdpaConfigs {
+		var pciAddress *domainschema.Address
 		if cfg.vmiSpecIface.PciAddress != "" {
 			var err error
 			pciAddress, err = device.NewPciAddressField(cfg.vmiSpecIface.PciAddress)
