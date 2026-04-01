@@ -23,7 +23,7 @@ import (
 	"encoding/xml"
 	"fmt"
 
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/callback"
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/callback"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

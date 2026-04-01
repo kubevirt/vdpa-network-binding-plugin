@@ -34,9 +34,9 @@ import (
 	hooksInfo "kubevirt.io/kubevirt/pkg/hooks/info"
 	hooksV1alpha2 "kubevirt.io/kubevirt/pkg/hooks/v1alpha2"
 
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/callback"
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/domain"
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/symlink"
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/callback"
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/domain"
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/symlink"
 )
 
 type InfoServer struct {

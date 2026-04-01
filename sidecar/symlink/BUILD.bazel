@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = ["symlink.go"],
-    importpath = "kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/symlink",
+    importpath = "kubevirt.io/vdpa-network-binding-plugin/sidecar/symlink",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/hooks:go_default_library",

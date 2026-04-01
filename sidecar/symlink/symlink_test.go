@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/symlink"
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/symlink"
 )
 
 const DEFAULT_TARGET = "/dev/vhost-vdpa-target-path"

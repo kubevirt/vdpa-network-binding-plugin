@@ -26,19 +26,17 @@ import (
 	"os"
 	"time"
 
-	vmschema "kubevirt.io/api/core/v1"
-
-	domainschema "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
-
 	"kubevirt.io/client-go/log"
 
+	vmschema "kubevirt.io/api/core/v1"
 	"kubevirt.io/kubevirt/pkg/apimachinery/wait"
 	"kubevirt.io/kubevirt/pkg/network/downwardapi"
-	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
-
-	"kubevirt.io/kubevirt/cmd/sidecars/network-vdpa-binding/symlink"
 	netnamescheme "kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
+	domainschema "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
+	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
+
+	"kubevirt.io/vdpa-network-binding-plugin/sidecar/symlink"
 )
 
 type VdpaIfaceConfig struct {
