@@ -36,8 +36,11 @@ import (
 )
 
 const hookSocket = "vdpa.sock"
+const sidecarAPIVersion = "v1alpha2"
+const sidecarName = "vdpa-network-binding-sidecar"
 
 func main() {
+	log.InitializeLogging(sidecarName)
 	socketPath := filepath.Join(hooks.HookSocketsSharedDirectory, hookSocket)
 	socket, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -48,9 +51,9 @@ func main() {
 	defer os.Remove(socketPath)
 
 	server := grpc.NewServer([]grpc.ServerOption{}...)
-	hooksInfo.RegisterInfoServer(server, srv.InfoServer{Version: "v1alpha2"})
+	hooksInfo.RegisterInfoServer(server, srv.InfoServer{Version: sidecarAPIVersion})
 	hooksV1alpha2.RegisterCallbacksServer(server, srv.V1alpha2Server{})
 
-	log.Log.Infof("Starting hook server exposing 'info' and '%s' services on socket %q", socketPath, "v1alpha2")
+	log.Log.Infof("Starting vdpa hook server exposing services on socket %q using API version %s", socketPath, sidecarAPIVersion)
 	server.Serve(socket)
 }

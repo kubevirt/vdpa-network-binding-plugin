@@ -22,6 +22,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"time"
@@ -154,7 +155,9 @@ func (p VdpaNetworkConfigurator) Mutate(domainSpec *domainschema.DomainSpec) (*d
 			domainSpecCopy.Devices.Interfaces = append(domainSpecCopy.Devices.Interfaces, *generatedIfaces[i])
 		}
 
-		log.Log.Infof("vdpa interface %s is added to domain spec successfully: %+v", config.vmiSpecIface.Name, generatedIfaces)
+		ifaceInfo, _ := xml.Marshal(generatedIfaces[i])
+		log.Log.Infof("vdpa interface %s is added to domain spec successfully: %s",
+			config.vmiSpecIface.Name, string(ifaceInfo))
 	}
 
 	return domainSpecCopy, nil
