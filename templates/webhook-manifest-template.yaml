@@ -73,7 +73,7 @@ spec:
       serviceAccountName: kubevirt-vdpa-mutating-webhook
       containers:
       - name: webhook
-        image: quay.io/kubevirt/vdpa-network-binding-admission-webhook:latest
+        image: VDPA_WEBHOOK_MANIFEST_TEMPLATE_IMAGE
         args:
         - --port=8443
         ports:

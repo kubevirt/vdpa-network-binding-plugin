@@ -1,0 +1,9 @@
+spec:
+  configuration:
+    network:
+      binding:
+        vdpa:
+          sidecarImage: quay.io/kubevirt/vdpa-network-binding-sidecar:latest
+          downwardAPI: "device-info"
+          migration:
+            method: ""

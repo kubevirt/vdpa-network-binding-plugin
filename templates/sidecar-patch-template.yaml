@@ -1,0 +1,9 @@
+spec:
+  configuration:
+    network:
+      binding:
+        vdpa:
+          sidecarImage: VDPA_SIDECAR_MANIFEST_TEMPLATE_IMAGE
+          downwardAPI: "device-info"
+          migration:
+            method: ""

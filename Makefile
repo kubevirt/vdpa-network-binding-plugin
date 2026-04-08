@@ -4,6 +4,11 @@ IMAGE_TAG ?= latest
 SIDECAR_NAME ?= vdpa-network-binding-sidecar
 WEBHOOK_NAME ?= vdpa-network-binding-admission-webhook
 
+WEBHOOK_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/webhook-manifest-template.yaml
+WEBHOOK_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-mutating-webhook.yaml
+SIDECAR_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/sidecar-patch-template.yaml
+SIDECAR_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-sidecar-patch.yaml
+
 GO_BUILD_FLAGS ?= -mod vendor
 OCI_BIN ?= podman
 
@@ -19,6 +24,7 @@ build_admission_webhook:
 
 clean:
 	rm -rf $(BUILD_DIR)
+	git restore manifests
 
 format:
 	gofmt -d -s -e sidecar webhook
@@ -53,6 +59,14 @@ push_sidecar:
 push_webhook:
 	$(OCI_BIN) push $(IMAGE_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)
 
+manifests: manifest_webhook manifest_sidecar
+
+manifest_webhook:
+	@sed -e "s|VDPA_WEBHOOK_MANIFEST_TEMPLATE_IMAGE|$(IMAGE_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)|g" $(WEBHOOK_MANIFEST_TEMPLATE_PATH) > $(WEBHOOK_MANIFEST_PATH)
+
+manifest_sidecar:
+	@sed -e "s|VDPA_SIDECAR_MANIFEST_TEMPLATE_IMAGE|$(IMAGE_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG)|g" $(SIDECAR_MANIFEST_TEMPLATE_PATH) > $(SIDECAR_MANIFEST_PATH)
+
 .PHONY: build build_sidecar build_admission_webhook clean format format_inplace \
 	lint test test_sidecar test_webhook images image_sidecar image_webhook \
-	push push_sidecar push_webhook
+	push push_sidecar push_webhook manifests manifest_webhook manifest_sidecar
