@@ -1,0 +1,17 @@
+# This Containerfile is supposed to be run from the
+# vdpa-network-binding-plugin repository root dir.
+FROM quay.io/centos/centos:stream9 AS builder
+
+WORKDIR /usr/src/vdpa_network_binding_admission_webhook
+RUN dnf install -y golang make git
+
+COPY . .
+RUN make clean
+RUN make WEBHOOK_NAME=vdpa-network-binding-admission-webhook build_admission_webhook
+
+FROM quay.io/centos/centos:stream9 AS webhook
+
+COPY --from=builder \
+    /usr/src/vdpa_network_binding_admission_webhook/build/vdpa-network-binding-admission-webhook /.
+
+ENTRYPOINT /vdpa-network-binding-admission-webhook

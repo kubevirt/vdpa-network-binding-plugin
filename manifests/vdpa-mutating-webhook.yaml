@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  namespace: kubevirt
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+rules:
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations"]
+  verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubevirt-vdpa-mutating-webhook
+subjects:
+- kind: ServiceAccount
+  name: kubevirt-vdpa-mutating-webhook
+  namespace: kubevirt
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  namespace: kubevirt
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+spec:
+  selector:
+    app: kubevirt-vdpa-mutating-webhook
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  namespace: kubevirt
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kubevirt-vdpa-mutating-webhook
+  template:
+    metadata:
+      labels:
+        app: kubevirt-vdpa-mutating-webhook
+    spec:
+      serviceAccountName: kubevirt-vdpa-mutating-webhook
+      containers:
+      - name: webhook
+        image: quay.io/kubevirt/vdpa-network-binding-admission-webhook:latest
+        args:
+        - --port=8443
+        ports:
+        - containerPort: 8443
+          name: https
+        readinessProbe:
+          httpGet:
+            scheme: HTTPS
+            path: /healthz
+            port: 8443
+          initialDelaySeconds: 3
+          periodSeconds: 5
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: kubevirt-vdpa-mutating-webhook
+  labels:
+    app: kubevirt-vdpa-mutating-webhook
+webhooks:
+- name: vdpa-reservedoverhead.kubevirt.io
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  failurePolicy: Fail
+  clientConfig:
+    service:
+      name: kubevirt-vdpa-mutating-webhook
+      namespace: kubevirt
+      path: /mutate-vdpa
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [kubevirt.io]
+    apiVersions: [v1]
+    resources: [virtualmachines]
