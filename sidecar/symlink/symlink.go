@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 
+	"kubevirt.io/client-go/log"
 	"kubevirt.io/kubevirt/pkg/hooks"
 )
 
@@ -48,6 +49,7 @@ func (f *SharedSymlinkFactory) CreateSharedSymlink(oldPath, symlinkName string) 
 
 	err := os.Symlink(oldPath, symlinkPath)
 	if err == nil {
+		log.Log.Infof("created hook-sidecar symlink %s -> %s", oldPath, symlinkPath)
 		return nil
 	} else if !os.IsExist(err) {
 		return err
@@ -64,5 +66,6 @@ func (f *SharedSymlinkFactory) CreateSharedSymlink(oldPath, symlinkName string) 
 			symlinkPath, sl, oldPath,
 		)
 	}
+	log.Log.Infof("symlink exists: %s -> %s", oldPath, symlinkPath)
 	return nil
 }
