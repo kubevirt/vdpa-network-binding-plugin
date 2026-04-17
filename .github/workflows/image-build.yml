@@ -1,0 +1,11 @@
+name: Image Build
+on: [push, pull_request]
+jobs:
+  image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Build container images
+        run: make images
