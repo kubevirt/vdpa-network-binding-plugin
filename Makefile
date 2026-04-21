@@ -27,7 +27,7 @@ clean:
 	git restore manifests
 
 format:
-	gofmt -d -s -e sidecar webhook
+	@gofmt -d -s -e sidecar webhook
 
 format_inplace:
 	gofmt -s -e -w sidecar webhook
