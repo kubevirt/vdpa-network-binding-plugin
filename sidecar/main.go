@@ -47,7 +47,11 @@ func main() {
 		log.Log.Reason(err).Errorf("Failed to initialized socket on path: %s", socket)
 		os.Exit(1)
 	}
-	defer os.Remove(socketPath)
+	defer func() {
+		if err := os.Remove(socketPath); err != nil {
+			log.Log.Reason(err).Errorf("Failed to remove socket: %s", socketPath)
+		}
+	}()
 
 	server := grpc.NewServer([]grpc.ServerOption{}...)
 	hooksInfo.RegisterInfoServer(server, srv.InfoServer{Version: sidecarAPIVersion})
