@@ -45,7 +45,6 @@ func main() {
 	socket, err := net.Listen("unix", socketPath)
 	if err != nil {
 		log.Log.Reason(err).Errorf("Failed to initialized socket on path: %s", socket)
-		log.Log.Error("Check whether given directory exists and socket name is not already taken by other file")
 		os.Exit(1)
 	}
 	defer os.Remove(socketPath)
