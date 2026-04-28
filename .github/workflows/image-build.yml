@@ -1,5 +1,5 @@
 name: Image Build
-on: [push, pull_request]
+on: pull_request
 jobs:
   image-build:
     runs-on: ubuntu-latest
