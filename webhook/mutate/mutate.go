@@ -121,7 +121,7 @@ func mutateVM(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 		patchSet.AddOption(patch.WithAdd(pathReservedOverhead, map[string]interface{}{}))
 	}
 
-	if !(reservedOverheadExists && vmSpec.Domain.Memory.ReservedOverhead.MemLock != nil && *vmSpec.Domain.Memory.ReservedOverhead.MemLock == v1.MemLockRequired) {
+	if !reservedOverheadExists || vmSpec.Domain.Memory.ReservedOverhead.MemLock == nil || *vmSpec.Domain.Memory.ReservedOverhead.MemLock != v1.MemLockRequired {
 		log.Log.V(2).Infof("Setting MemLock to Required for VM %s/%s", ar.Request.Namespace, ar.Request.Name)
 		patchSet.AddOption(patch.WithAdd(pathMemLock, v1.MemLockRequired))
 	}

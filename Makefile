@@ -33,7 +33,7 @@ format_inplace:
 	gofmt -s -e -w sidecar webhook
 
 lint:
-	golint webhook sidecar
+	golangci-lint run
 
 test: test_sidecar test_webhook
 

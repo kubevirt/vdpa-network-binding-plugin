@@ -53,5 +53,5 @@ repository. Make sure that your changes do not break anything by running
 `make` and any relevant testing that is not already covered by unit
 tests.
 
-Note that for `make` to run properly, golint and ginkgo must be present
-in the environment.
+Note that for `make` to run properly, golangci-lint and ginkgo must be
+present in the environment.

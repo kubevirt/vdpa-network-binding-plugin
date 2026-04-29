@@ -1,5 +1,5 @@
 name: Test
-on: [push, pull_request]
+on: pull_request
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -14,22 +14,8 @@ jobs:
       - name: Set up Go path
         run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Install golint
-        run: go install golang.org/x/lint/golint@latest
-
       - name: Install ginkgo
         run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
-
-      - name: Lint
-        run: make lint
-
-      - name: Format check
-        run: |
-          diff=$(make format || true)
-          if [ -n "$diff" ]; then
-            echo "$diff"
-            exit 1
-          fi
 
       - name: Vendor check
         run: |
@@ -41,3 +27,26 @@ jobs:
 
       - name: Unit tests
         run: make test
+  lint:
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:latest
+    steps:
+      - name: Install dependencies
+        run: dnf install -y golang make git golangci-lint
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go path
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Format check
+        run: |
+          diff=$(make format || true)
+          if [ -n "$diff" ]; then
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: Lint
+        run: make lint
