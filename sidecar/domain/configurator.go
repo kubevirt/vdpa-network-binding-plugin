@@ -25,6 +25,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"kubevirt.io/client-go/log"
@@ -196,6 +197,11 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 			acpi = &domainschema.ACPI{Index: uint(cfg.vmiSpecIface.ACPIIndex)}
 		}
 
+		var mtu *domainschema.MTU
+		if cfg.Mtu != 0 {
+			mtu = &domainschema.MTU{Size: strconv.Itoa(cfg.Mtu)}
+		}
+
 		vdpaPath := symlink.SharedComputeSymlinkPath(p.containerName, cfg.symlinkName)
 
 		domainInterfaces = append(domainInterfaces, &domainschema.Interface{
@@ -206,6 +212,7 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 			ACPI:    acpi,
 			Type:    "vdpa",
 			Source:  domainschema.InterfaceSource{Device: vdpaPath},
+			MTU:     mtu,
 		})
 	}
 
