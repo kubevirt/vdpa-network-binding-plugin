@@ -122,6 +122,7 @@ type DomainStatus struct {
 	Interfaces     []InterfaceStatus
 	OSInfo         GuestOSInfo
 	FSFreezeStatus FSFreeze
+	GuestPanicInfo *GuestPanicInfo
 }
 
 // GuestPanicInfo contains details about a guest panic event from QEMU
@@ -307,11 +308,21 @@ type NUMA struct {
 }
 
 type NUMACell struct {
-	ID           string `xml:"id,attr"`
-	CPUs         string `xml:"cpus,attr"`
-	Memory       uint64 `xml:"memory,attr,omitempty"`
-	Unit         string `xml:"unit,attr,omitempty"`
-	MemoryAccess string `xml:"memAccess,attr,omitempty"`
+	ID           string             `xml:"id,attr"`
+	CPUs         string             `xml:"cpus,attr,omitempty"`
+	Memory       *uint64            `xml:"memory,attr,omitempty"`
+	Unit         string             `xml:"unit,attr,omitempty"`
+	MemoryAccess string             `xml:"memAccess,attr,omitempty"`
+	Distances    *NUMACellDistances `xml:"distances,omitempty"`
+}
+
+type NUMACellDistances struct {
+	Siblings []NUMACellSibling `xml:"sibling"`
+}
+
+type NUMACellSibling struct {
+	ID    string `xml:"id,attr"`
+	Value uint64 `xml:"value,attr"`
 }
 
 type CPUFeature struct {
@@ -641,6 +652,7 @@ type Devices struct {
 	TPMs         []TPM              `xml:"tpm,omitempty"`
 	VSOCK        *VSOCK             `xml:"vsock,omitempty"`
 	Memory       *MemoryDevice      `xml:"memory,omitempty"`
+	IOMMU        []IOMMUDevice      `xml:"iommu,omitempty"`
 }
 
 type PanicDevice struct {
@@ -732,10 +744,20 @@ type HostDevice struct {
 	Alias     *Alias           `xml:"alias,omitempty"`
 	Display   string           `xml:"display,attr,omitempty"`
 	RamFB     string           `xml:"ramfb,attr,omitempty"`
+	Driver    *HostDevDriver   `xml:"driver,omitempty"`
+	ACPI      *ACPIHostDev     `xml:"acpi,omitempty"`
 }
 
 type HostDeviceSource struct {
 	Address *Address `xml:"address,omitempty"`
+}
+
+type HostDevDriver struct {
+	Iommufd string `xml:"iommufd,attr,omitempty"`
+}
+
+type ACPIHostDev struct {
+	NodeSet string `xml:"nodeset,attr,omitempty"`
 }
 
 // END HostDevice -----------------------------
@@ -781,6 +803,25 @@ type ControllerTarget struct {
 
 // END ControllerTarget
 
+// BEGIN IOMMU -----------------------------
+
+type IOMMUDevice struct {
+	XMLName xml.Name     `xml:"iommu"`
+	Model   string       `xml:"model,attr"`
+	Driver  *IOMMUDriver `xml:"driver,omitempty"`
+}
+
+type IOMMUDriver struct {
+	PCIBus   string `xml:"pciBus,attr,omitempty"`
+	Accel    string `xml:"accel,attr,omitempty"`
+	ATS      string `xml:"ats,attr,omitempty"`
+	RIL      string `xml:"ril,attr,omitempty"`
+	SSIDSize string `xml:"ssidSize,attr,omitempty"`
+	OAS      string `xml:"oas,attr,omitempty"`
+}
+
+// END IOMMU -----------------------------
+
 // BEGIN Disk -----------------------------
 
 type Disk struct {
@@ -801,7 +842,6 @@ type Disk struct {
 	BlockIO            *BlockIO      `xml:"blockio,omitempty"`
 	FilesystemOverhead *v1.Percent   `xml:"filesystemOverhead,omitempty"`
 	Capacity           *int64        `xml:"capacity,omitempty"`
-	ExpandDisksEnabled bool          `xml:"expandDisksEnabled,omitempty"`
 	Shareable          *Shareable    `xml:"shareable,omitempty"`
 }
 
@@ -1187,12 +1227,17 @@ type Entry struct {
 //BEGIN LaunchSecurity --------------------
 
 type LaunchSecurity struct {
-	Type            string `xml:"type,attr"`
-	DHCert          string `xml:"dhCert,omitempty"`
-	Session         string `xml:"session,omitempty"`
-	Cbitpos         string `xml:"cbitpos,omitempty"`
-	ReducedPhysBits string `xml:"reducedPhysBits,omitempty"`
-	Policy          string `xml:"policy,omitempty"`
+	Type                   string `xml:"type,attr"`
+	DHCert                 string `xml:"dhCert,omitempty"`
+	Session                string `xml:"session,omitempty"`
+	Cbitpos                string `xml:"cbitpos,omitempty"`
+	ReducedPhysBits        string `xml:"reducedPhysBits,omitempty"`
+	Policy                 string `xml:"policy,omitempty"`
+	QuoteGenerationService *QGS   `xml:"quoteGenerationService,omitempty"`
+}
+
+type QGS struct {
+	Path string `xml:"path,attr,omitempty"`
 }
 
 //END LaunchSecurity --------------------
