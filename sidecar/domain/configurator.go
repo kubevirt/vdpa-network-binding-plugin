@@ -42,9 +42,8 @@ import (
 
 type VdpaIfaceConfig struct {
 	vmiSpecIface *vmschema.Interface
-	vdpaPath     string
 	symlinkName  string
-	macAddr      string
+	*downwardapi.Interface
 }
 
 type VdpaNetworkConfigurator struct {
@@ -122,9 +121,8 @@ func NewVdpaNetworkConfigurator(
 			configs = append(configs,
 				&VdpaIfaceConfig{
 					vmiSpecIface: iface,
-					vdpaPath:     ifaceInfo.DeviceInfo.Vdpa.Path,
 					symlinkName:  podNetName,
-					macAddr:      ifaceInfo.Mac,
+					Interface:    ifaceInfo,
 				},
 			)
 		}
@@ -189,8 +187,8 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 		var mac *domainschema.MAC
 		if cfg.vmiSpecIface.MacAddress != "" {
 			mac = &domainschema.MAC{MAC: cfg.vmiSpecIface.MacAddress}
-		} else if cfg.macAddr != "" {
-			mac = &domainschema.MAC{MAC: cfg.macAddr}
+		} else if cfg.Mac != "" {
+			mac = &domainschema.MAC{MAC: cfg.Mac}
 		}
 
 		var acpi *domainschema.ACPI
@@ -217,7 +215,7 @@ func (p VdpaNetworkConfigurator) generateInterfaces() ([]*domainschema.Interface
 func (p *VdpaNetworkConfigurator) VdpaPathsToSymlinkNames() map[string]string {
 	pathsToSymlinks := make(map[string]string, len(p.vdpaConfigs))
 	for _, cfg := range p.vdpaConfigs {
-		pathsToSymlinks[cfg.vdpaPath] = cfg.symlinkName
+		pathsToSymlinks[cfg.DeviceInfo.Vdpa.Path] = cfg.symlinkName
 	}
 	return pathsToSymlinks
 }
