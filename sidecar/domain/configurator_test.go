@@ -417,6 +417,76 @@ var _ = Describe("pod network configurator", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
 		})
+
+		It("should properly set mtu if present in networkinfo", func() {
+			netInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{
+					{
+						Network: "vdpa-net-mtu-0",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+						},
+						Mtu: 0,
+					},
+					{
+						Network: "vdpa-net-with-mtu",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-1"},
+						},
+						Mtu: 9000,
+					},
+					{
+						Network: "vdpa-net-without-mtu",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-1"},
+						},
+					},
+				},
+			}
+
+			ifaces := []vmschema.Interface{
+				{Name: "vdpa-net-mtu-0", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-with-mtu", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-without-mtu", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-mtu-0", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-with-mtu", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-without-mtu", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+
+			expectedDomainIfaces := []domainschema.Interface{
+				{
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-mtu-0"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: slPath("vdpa-net-mtu-0")},
+					Model:  &domainschema.Model{Type: "virtio"},
+				},
+				{
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-with-mtu"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: slPath("vdpa-net-with-mtu")},
+					Model:  &domainschema.Model{Type: "virtio"},
+					MTU:    &domainschema.MTU{Size: "9000"},
+				},
+				{
+					Alias:  domainschema.NewUserDefinedAlias("vdpa-net-without-mtu"),
+					Type:   "vdpa",
+					Source: domainschema.InterfaceSource{Device: slPath("vdpa-net-without-mtu")},
+					Model:  &domainschema.Model{Type: "virtio"},
+				},
+			}
+
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, DEFAULT_CONT_NAME)
+			Expect(err).ToNot(HaveOccurred())
+
+			mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
+		})
 	})
 
 	Context("GetDownwardAPINetworkInfo file handling", func() {

@@ -17,9 +17,9 @@ require (
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.35.3
 	k8s.io/client-go v12.0.0+incompatible
-	kubevirt.io/api v1.8.1
-	kubevirt.io/client-go v1.8.1
-	kubevirt.io/kubevirt v1.8.1
+	kubevirt.io/api v1.9.0-beta.0.0.20260614062121-ec26de22bd7e
+	kubevirt.io/client-go v1.9.0-beta.0.0.20260614062123-b66910275ee3
+	kubevirt.io/kubevirt v1.9.0-beta.0.0.20260616094831-9074643d38b6
 )
 
 require (

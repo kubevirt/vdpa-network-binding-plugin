@@ -17,17 +17,8 @@
  *
  */
 
-package downwardapi
+// +k8s:deepcopy-gen=package
+// +groupName=plugin.kubevirt.io
+// +k8s:openapi-gen=true
 
-import v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
-
-type Interface struct {
-	Network    string         `json:"network"`
-	DeviceInfo *v1.DeviceInfo `json:"deviceInfo,omitempty"`
-	Mac        string         `json:"mac,omitempty"`
-	Mtu        int            `json:"mtu,omitempty"`
-}
-
-type NetworkInfo struct {
-	Interfaces []Interface `json:"interfaces,omitempty"`
-}
+package v1alpha1
