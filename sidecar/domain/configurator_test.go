@@ -417,6 +417,75 @@ var _ = Describe("pod network configurator", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mutatedDomSpec.Devices.Interfaces).To(Equal(expectedDomainIfaces))
 		})
+
+		It("should not configure shared mode memory backing for hardware-backed devices", func() {
+			netInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{
+					{
+						Network: "vdpa-net-hardware-mgmtdev",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+							Pci:  &networkv1.PciDevice{PciAddress: "0000:00:00.1"},
+						},
+					},
+				},
+			}
+
+			ifaces := []vmschema.Interface{
+				{Name: "vdpa-net-hardware-mgmtdev", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-hardware-mgmtdev", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, DEFAULT_CONT_NAME)
+			Expect(err).ToNot(HaveOccurred())
+
+			mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutatedDomSpec.MemoryBacking).To(BeNil())
+		})
+
+		It("should configure shared mode memory backing if there is at least one userspace vdpa device", func() {
+			netInfo := &downwardapi.NetworkInfo{
+				Interfaces: []downwardapi.Interface{
+					{
+						Network: "vdpa-net-hw",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-0"},
+							Pci:  &networkv1.PciDevice{PciAddress: "0000:11:00.1"},
+						},
+					},
+					{
+						Network: "vdpa-net-user",
+						DeviceInfo: &networkv1.DeviceInfo{
+							Type: networkv1.DeviceInfoTypeVDPA,
+							Vdpa: &networkv1.VdpaDevice{Path: "/dev/vhost-vdpa-1"},
+						},
+					},
+				},
+			}
+
+			ifaces := []vmschema.Interface{
+				{Name: "vdpa-net-hw", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net-user", Binding: &vmschema.PluginBinding{Name: "vdpa"}},
+			}
+			networks := []vmschema.Network{
+				{Name: "vdpa-net-hw", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+				{Name: "vdpa-net-user", NetworkSource: vmschema.NetworkSource{Multus: &vmschema.MultusNetwork{}}},
+			}
+
+			expectedMemoryBacking := &domainschema.MemoryBacking{Access: &domainschema.MemoryBackingAccess{Mode: "shared"}}
+
+			testMutator, err := domain.NewVdpaNetworkConfigurator(ifaces, networks, netInfo, DEFAULT_CONT_NAME)
+			Expect(err).ToNot(HaveOccurred())
+
+			mutatedDomSpec, err := testMutator.Mutate(&domainschema.DomainSpec{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mutatedDomSpec.MemoryBacking).To(Equal(expectedMemoryBacking))
+		})
 	})
 
 	Context("GetDownwardAPINetworkInfo file handling", func() {
