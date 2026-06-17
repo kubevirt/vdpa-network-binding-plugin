@@ -145,6 +145,7 @@ func (p VdpaNetworkConfigurator) Mutate(domainSpec *domainschema.DomainSpec) (*d
 		return nil, fmt.Errorf("failed to generate domain interface spec: %v", err)
 	}
 
+	memoryBackingConfigRequired := false
 	domainSpecCopy := domainSpec.DeepCopy()
 	for i, config := range p.vdpaConfigs {
 		if iface := lookupIfaceByAliasName(domainSpecCopy.Devices.Interfaces, config.vmiSpecIface.Name); iface != nil {
@@ -153,9 +154,19 @@ func (p VdpaNetworkConfigurator) Mutate(domainSpec *domainschema.DomainSpec) (*d
 			domainSpecCopy.Devices.Interfaces = append(domainSpecCopy.Devices.Interfaces, *generatedIfaces[i])
 		}
 
+		if config.DeviceInfo.Pci == nil ||
+			config.DeviceInfo.Pci.PciAddress == "" {
+			memoryBackingConfigRequired = true
+		}
+
 		ifaceInfo, _ := xml.Marshal(generatedIfaces[i])
 		log.Log.Infof("vdpa interface %s is added to domain spec successfully: %s",
 			config.vmiSpecIface.Name, string(ifaceInfo))
+
+	}
+
+	if memoryBackingConfigRequired {
+		p.configureMemoryBacking(domainSpecCopy)
 	}
 
 	return domainSpecCopy, nil
@@ -218,4 +229,25 @@ func (p *VdpaNetworkConfigurator) VdpaPathsToSymlinkNames() map[string]string {
 		pathsToSymlinks[cfg.DeviceInfo.Vdpa.Path] = cfg.symlinkName
 	}
 	return pathsToSymlinks
+}
+
+func (p *VdpaNetworkConfigurator) configureMemoryBacking(domain *domainschema.DomainSpec) {
+	if mb := domain.MemoryBacking; mb != nil {
+		if access := mb.Access; access != nil {
+			if access.Mode != "shared" {
+				log.Log.Warningf("userspace vdpa requires memoryBacking access to be shared but it's %s. Overwriting", access)
+				access.Mode = "shared"
+			}
+		} else {
+			mb.Access = &domainschema.MemoryBackingAccess{
+				Mode: "shared",
+			}
+		}
+	} else {
+		domain.MemoryBacking = &domainschema.MemoryBacking{
+			Access: &domainschema.MemoryBackingAccess{
+				Mode: "shared",
+			},
+		}
+	}
 }
