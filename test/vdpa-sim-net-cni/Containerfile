@@ -1,0 +1,18 @@
+# This Containerfile is supposed to be run from the
+# vdpa-network-binding-plugin repository root dir.
+FROM quay.io/centos/centos:stream9 AS builder
+
+WORKDIR /usr/src/vdpa-network-binding-plugin
+RUN dnf update -y && dnf clean all
+RUN dnf install -y golang make git
+
+COPY . .
+RUN make clean
+RUN make build_test_cni
+
+FROM quay.io/centos/centos:stream9
+WORKDIR /
+
+# Copy the binary from builder
+COPY --from=builder /usr/src/vdpa-network-binding-plugin/build/vdpa-sim-net-cni /vdpa-sim-net-cni
+RUN chmod +x /vdpa-sim-net-cni

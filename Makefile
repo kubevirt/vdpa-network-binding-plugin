@@ -7,6 +7,8 @@ WEBHOOK_NAME ?= vdpa-network-binding-admission-webhook
 
 REQUIRE_IMAGE_PUSH_TLS_VERIFICATION ?= true
 
+TEST_CNI_NAME ?= vdpa-sim-net-cni
+
 WEBHOOK_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/webhook-manifest-template.yaml
 WEBHOOK_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-mutating-webhook.yaml
 SIDECAR_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/sidecar-patch-template.yaml
@@ -25,15 +27,20 @@ build_sidecar:
 build_admission_webhook:
 	go build -C webhook $(GO_BUILD_FLAGS) -o ../$(BUILD_DIR)/$(WEBHOOK_NAME)
 
+build_test_dependencies: build_test_cni
+
+build_test_cni:
+	go build -C test/vdpa-sim-net-cni/cmd $(GO_BUILD_FLAGS) -o ../../../$(BUILD_DIR)/$(TEST_CNI_NAME)
+
 clean:
 	rm -rf $(BUILD_DIR)
 	git restore manifests
 
 format:
-	@gofmt -d -s -e sidecar webhook
+	@gofmt -d -s -e sidecar webhook test
 
 format_inplace:
-	gofmt -s -e -w sidecar webhook
+	gofmt -s -e -w sidecar webhook test
 
 lint:
 	golangci-lint run
@@ -69,6 +76,18 @@ push_webhook:
 		$(PUSH_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)
 
 
+image_test_dependencies: image_test_cni
+push_test_dependencies: push_test_cni
+
+image_test_cni:
+	$(OCI_BIN) build -f test/vdpa-sim-net-cni/Containerfile -t $(IMAGE_REGISTRY)/$(TEST_CNI_NAME):$(IMAGE_TAG) .
+
+push_test_cni:
+	$(OCI_BIN) push \
+		--tls-verify=$(REQUIRE_IMAGE_PUSH_TLS_VERIFICATION) \
+		$(IMAGE_REGISTRY)/$(TEST_CNI_NAME):$(IMAGE_TAG) \
+		$(PUSH_REGISTRY)/$(TEST_CNI_NAME):$(IMAGE_TAG)
+
 manifests: manifest_webhook manifest_sidecar
 
 manifest_webhook:
@@ -85,7 +104,10 @@ sync_webhook: manifest_webhook
 sync_sidecar: manifest_sidecar
 	kubectl patch -n kubevirt kubevirts kubevirt --type merge --patch-file $(SIDECAR_MANIFEST_PATH)
 
-.PHONY: build build_sidecar build_admission_webhook clean format format_inplace \
-	lint test test_sidecar test_webhook images image_sidecar image_webhook \
-	push push_sidecar push_webhook manifests manifest_webhook manifest_sidecar \
-	sync sync_webhook sync_sidecar
+.PHONY: build build_sidecar build_admission_webhook \
+        clean format format_inplace lint test test_sidecar test_webhook \
+        images image_sidecar image_webhook  push \
+        push_sidecar push_webhook manifests \
+        manifest_webhook manifest_sidecar sync sync_webhook sync_sidecar \
+        build_test_cni image_test_cni push_test_cni sync_test_dependencies \
+        image_test_dependencies push_test_dependencies build_test_dependencies
