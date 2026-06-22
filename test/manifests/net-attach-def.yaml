@@ -1,0 +1,48 @@
+---
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vdpasimnet-unique-device-1
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: devices.kubevirt.io/vdpa-sim-net-one-assignable-device-1
+spec:
+  config: '{
+  "type": "vdpa-sim-net",
+  "cniVersion": "0.3.1",
+  "name": "vdpasimnet-unique-device-1",
+  "capabilities": {
+        "CNIDeviceInfoFile": true
+      }
+}'
+---
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vdpasimnet-unique-device-2
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: devices.kubevirt.io/vdpa-sim-net-one-assignable-device-2
+spec:
+  config: '{
+  "type": "vdpa-sim-net",
+  "cniVersion": "0.3.1",
+  "name": "vdpasimnet-unique-device-2",
+  "capabilities": {
+        "CNIDeviceInfoFile": true
+      }
+}'
+---
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+  name: vdpasimnet-multiple-devices
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: devices.kubevirt.io/vdpa-sim-net-multiple-devices
+spec:
+  config: '{
+  "type": "vdpa-sim-net",
+  "cniVersion": "0.3.1",
+  "name": "vdpasimnet-multiple-devices",
+  "capabilities": {
+        "CNIDeviceInfoFile": true
+      }
+}'

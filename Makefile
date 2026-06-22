@@ -14,6 +14,7 @@ WEBHOOK_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/webhook-manifest-template.yam
 WEBHOOK_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-mutating-webhook.yaml
 SIDECAR_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/sidecar-patch-template.yaml
 SIDECAR_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-sidecar-patch.yaml
+TEST_DEPENDENCIES_MANIFESTS_PATH ?= $(PWD)/test/manifests
 
 GO_BUILD_FLAGS ?= -mod vendor
 OCI_BIN ?= podman
@@ -116,6 +117,20 @@ sync_webhook: manifest_webhook
 
 sync_sidecar: manifest_sidecar
 	kubectl patch -n kubevirt kubevirts kubevirt --type merge --patch-file $(SIDECAR_MANIFEST_PATH)
+
+sync_test_dependencies:
+	cat $(TEST_DEPENDENCIES_MANIFESTS_PATH)/*.yaml | \
+	IMAGE_REGISTRY=$(IMAGE_REGISTRY) IMAGE_TAG=$(IMAGE_TAG) \
+	TEST_DEVICE_PLUGIN_NAME=$(TEST_DEVICE_PLUGIN_NAME) \
+	TEST_CNI_NAME=$(TEST_CNI_NAME) \
+		envsubst | kubectl apply -f -
+
+clean_test_dependencies:
+	cat $(TEST_DEPENDENCIES_MANIFESTS_PATH)/*.yaml | \
+	IMAGE_REGISTRY=$(IMAGE_REGISTRY) IMAGE_TAG=$(IMAGE_TAG) \
+	TEST_DEVICE_PLUGIN_NAME=$(TEST_DEVICE_PLUGIN_NAME) \
+	TEST_CNI_NAME=$(TEST_CNI_NAME) \
+		envsubst | kubectl delete -f -
 
 .PHONY: build build_sidecar build_admission_webhook build_test_device_plugin \
         clean format format_inplace lint test test_sidecar test_webhook \
