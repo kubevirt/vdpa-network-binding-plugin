@@ -7,6 +7,7 @@ WEBHOOK_NAME ?= vdpa-network-binding-admission-webhook
 
 REQUIRE_IMAGE_PUSH_TLS_VERIFICATION ?= true
 
+TEST_KUBEVIRTCI_PATH = ./test/kubevirtci
 TEST_DEVICE_PLUGIN_NAME ?= vdpa-sim-net-device-plugin
 TEST_CNI_NAME ?= vdpa-sim-net-cni
 
@@ -132,10 +133,17 @@ clean_test_dependencies:
 	TEST_CNI_NAME=$(TEST_CNI_NAME) \
 		envsubst | kubectl delete -f -
 
+kubevirtci_init:
+	git submodule update --init --recursive -- $(TEST_KUBEVIRTCI_PATH)
+
+kubevirtci_update:
+	git submodule update --remote --rebase -- $(TEST_KUBEVIRTCI_PATH)
+
 .PHONY: build build_sidecar build_admission_webhook build_test_device_plugin \
         clean format format_inplace lint test test_sidecar test_webhook \
         images image_sidecar image_webhook image_test_device_plugin push \
         push_sidecar push_webhook push_test_device_plugin manifests \
         manifest_webhook manifest_sidecar sync sync_webhook sync_sidecar \
         build_test_cni image_test_cni push_test_cni sync_test_dependencies \
-        image_test_dependencies push_test_dependencies build_test_dependencies
+        image_test_dependencies push_test_dependencies build_test_dependencies \
+        kubevirtci_init kubevirtci_update
