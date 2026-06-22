@@ -16,6 +16,7 @@ WEBHOOK_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-mutating-webhook.yaml
 SIDECAR_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/sidecar-patch-template.yaml
 SIDECAR_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-sidecar-patch.yaml
 TEST_DEPENDENCIES_MANIFESTS_PATH ?= $(PWD)/test/manifests
+KUBEVIRT_SYNC_VERSION ?= latest
 
 GO_BUILD_FLAGS ?= -mod vendor
 OCI_BIN ?= podman
@@ -145,6 +146,9 @@ cluster_up:
 cluster_down:
 	./test/cluster/cluster.sh down
 
+cluster_sync_kubevirt:
+	./test/cluster/install_kubevirt.sh ${KUBEVIRT_SYNC_VERSION}
+
 .PHONY: build build_sidecar build_admission_webhook build_test_device_plugin \
         clean format format_inplace lint test test_sidecar test_webhook \
         images image_sidecar image_webhook image_test_device_plugin push \
@@ -152,4 +156,5 @@ cluster_down:
         manifest_webhook manifest_sidecar sync sync_webhook sync_sidecar \
         build_test_cni image_test_cni push_test_cni sync_test_dependencies \
         image_test_dependencies push_test_dependencies build_test_dependencies \
-        kubevirtci_init kubevirtci_update cluster_up cluster_down
+        kubevirtci_init kubevirtci_update cluster_up cluster_down \
+		cluster_sync_kubevirt
