@@ -139,6 +139,12 @@ kubevirtci_init:
 kubevirtci_update:
 	git submodule update --remote --rebase -- $(TEST_KUBEVIRTCI_PATH)
 
+cluster_up:
+	./test/cluster/cluster.sh up
+
+cluster_down:
+	./test/cluster/cluster.sh down
+
 .PHONY: build build_sidecar build_admission_webhook build_test_device_plugin \
         clean format format_inplace lint test test_sidecar test_webhook \
         images image_sidecar image_webhook image_test_device_plugin push \
@@ -146,4 +152,4 @@ kubevirtci_update:
         manifest_webhook manifest_sidecar sync sync_webhook sync_sidecar \
         build_test_cni image_test_cni push_test_cni sync_test_dependencies \
         image_test_dependencies push_test_dependencies build_test_dependencies \
-        kubevirtci_init kubevirtci_update
+        kubevirtci_init kubevirtci_update cluster_up cluster_down
