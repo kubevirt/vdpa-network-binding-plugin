@@ -5,6 +5,8 @@ IMAGE_TAG ?= latest
 SIDECAR_NAME ?= vdpa-network-binding-sidecar
 WEBHOOK_NAME ?= vdpa-network-binding-admission-webhook
 
+REQUIRE_IMAGE_PUSH_TLS_VERIFICATION ?= true
+
 WEBHOOK_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/webhook-manifest-template.yaml
 WEBHOOK_MANIFEST_PATH ?= $(PWD)/manifests/vdpa-mutating-webhook.yaml
 SIDECAR_MANIFEST_TEMPLATE_PATH ?= $(PWD)/templates/sidecar-patch-template.yaml
@@ -56,11 +58,13 @@ push: push_sidecar push_webhook
 
 push_sidecar:
 	$(OCI_BIN) push \
+		--tls-verify=$(REQUIRE_IMAGE_PUSH_TLS_VERIFICATION) \
 		$(IMAGE_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG) \
 		$(PUSH_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG)
 
 push_webhook:
 	$(OCI_BIN) push \
+		--tls-verify=$(REQUIRE_IMAGE_PUSH_TLS_VERIFICATION) \
 		$(IMAGE_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG) \
 		$(PUSH_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)
 
