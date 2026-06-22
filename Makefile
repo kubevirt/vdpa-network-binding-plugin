@@ -115,24 +115,24 @@ manifest_sidecar:
 sync: sync_webhook sync_sidecar
 
 sync_webhook: manifest_webhook
-	kubectl apply -f $(WEBHOOK_MANIFEST_PATH)
+	./test/cluster/kubectl.sh apply -f $(WEBHOOK_MANIFEST_PATH)
 
 sync_sidecar: manifest_sidecar
-	kubectl patch -n kubevirt kubevirts kubevirt --type merge --patch-file $(SIDECAR_MANIFEST_PATH)
+	./test/cluster/kubectl.sh patch -n kubevirt kubevirts kubevirt --type merge --patch-file $(SIDECAR_MANIFEST_PATH)
 
 sync_test_dependencies:
 	cat $(TEST_DEPENDENCIES_MANIFESTS_PATH)/*.yaml | \
 	IMAGE_REGISTRY=$(IMAGE_REGISTRY) IMAGE_TAG=$(IMAGE_TAG) \
 	TEST_DEVICE_PLUGIN_NAME=$(TEST_DEVICE_PLUGIN_NAME) \
 	TEST_CNI_NAME=$(TEST_CNI_NAME) \
-		envsubst | kubectl apply -f -
+		envsubst | ./test/cluster/kubectl.sh apply -f -
 
 clean_test_dependencies:
 	cat $(TEST_DEPENDENCIES_MANIFESTS_PATH)/*.yaml | \
 	IMAGE_REGISTRY=$(IMAGE_REGISTRY) IMAGE_TAG=$(IMAGE_TAG) \
 	TEST_DEVICE_PLUGIN_NAME=$(TEST_DEVICE_PLUGIN_NAME) \
 	TEST_CNI_NAME=$(TEST_CNI_NAME) \
-		envsubst | kubectl delete -f -
+		envsubst | ./test/cluster/kubectl.sh delete -f -
 
 kubevirtci_init:
 	git submodule update --init --recursive -- $(TEST_KUBEVIRTCI_PATH)
