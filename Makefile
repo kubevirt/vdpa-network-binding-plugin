@@ -1,5 +1,6 @@
 BUILD_DIR ?= build
 IMAGE_REGISTRY ?= quay.io/kubevirt
+PUSH_REGISTRY ?= $(IMAGE_REGISTRY)
 IMAGE_TAG ?= latest
 SIDECAR_NAME ?= vdpa-network-binding-sidecar
 WEBHOOK_NAME ?= vdpa-network-binding-admission-webhook
@@ -54,10 +55,15 @@ image_webhook:
 push: push_sidecar push_webhook
 
 push_sidecar:
-	$(OCI_BIN) push $(IMAGE_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG)
+	$(OCI_BIN) push \
+		$(IMAGE_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG) \
+		$(PUSH_REGISTRY)/$(SIDECAR_NAME):$(IMAGE_TAG)
 
 push_webhook:
-	$(OCI_BIN) push $(IMAGE_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)
+	$(OCI_BIN) push \
+		$(IMAGE_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG) \
+		$(PUSH_REGISTRY)/$(WEBHOOK_NAME):$(IMAGE_TAG)
+
 
 manifests: manifest_webhook manifest_sidecar
 
