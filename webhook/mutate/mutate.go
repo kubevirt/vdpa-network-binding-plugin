@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -37,12 +38,22 @@ import (
 )
 
 const (
-	vdpaBindingName      = "vdpa"
-	pathMemory           = "/spec/template/spec/domain/memory"
-	pathReservedOverhead = pathMemory + "/reservedOverhead"
-	pathMemLock          = pathReservedOverhead + "/memLock"
-	pathAddedOverhead    = pathReservedOverhead + "/addedOverhead"
+	vdpaBindingName = "vdpa"
+	pathMemoryVM    = "/spec/template/spec/domain/memory"
+	pathMemoryVMI   = "/spec/domain/memory"
 )
+
+func pathReservedOverhead(memoryPath string) string {
+	return filepath.Join(memoryPath, "reservedOverhead")
+}
+
+func pathMemLock(memoryPath string) string {
+	return filepath.Join(pathReservedOverhead(memoryPath), "memLock")
+}
+
+func pathAddedOverhead(memoryPath string) string {
+	return filepath.Join(pathReservedOverhead(memoryPath), "addedOverhead")
+}
 
 func HandleMutateVDPA(resp http.ResponseWriter, req *http.Request) {
 	review, err := getAdmissionReview(req)
@@ -82,17 +93,28 @@ func HandleMutateVDPA(resp http.ResponseWriter, req *http.Request) {
 }
 
 func mutateVM(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
-	vm := &v1.VirtualMachine{}
-	if err := json.Unmarshal(ar.Request.Object.Raw, vm); err != nil {
-		log.Log.Reason(err).Error("Failed to unmarshal VM from AdmissionReview")
+	var vmSpec *v1.VirtualMachineInstanceSpec
+	var memoryPath string
+
+	switch ar.Request.Kind.Kind {
+	case "VirtualMachine":
+		vm := &v1.VirtualMachine{}
+		if err := json.Unmarshal(ar.Request.Object.Raw, vm); err != nil {
+			return allowWithoutPatch()
+		}
+		vmSpec = &vm.Spec.Template.Spec
+		memoryPath = pathMemoryVM
+	case "VirtualMachineInstance":
+		vmi := &v1.VirtualMachineInstance{}
+		if err := json.Unmarshal(ar.Request.Object.Raw, vmi); err != nil {
+			return allowWithoutPatch()
+		}
+		vmSpec = &vmi.Spec
+		memoryPath = pathMemoryVMI
+	default:
 		return allowWithoutPatch()
 	}
 
-	if vm.Spec.Template == nil {
-		return allowWithoutPatch()
-	}
-
-	vmSpec := &vm.Spec.Template.Spec
 	vdpaCount := countVDPAInterfaces(vmSpec.Domain.Devices.Interfaces)
 	if vdpaCount == 0 {
 		log.Log.V(4).Infof("VM %s/%s has no vDPA interfaces, skipping mutation", ar.Request.Namespace, ar.Request.Name)
@@ -115,15 +137,15 @@ func mutateVM(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 	reservedOverheadExists := memoryExists && vmSpec.Domain.Memory.ReservedOverhead != nil
 
 	if !memoryExists {
-		patchSet.AddOption(patch.WithAdd(pathMemory, map[string]interface{}{}))
+		patchSet.AddOption(patch.WithAdd(memoryPath, map[string]interface{}{}))
 	}
 	if !reservedOverheadExists {
-		patchSet.AddOption(patch.WithAdd(pathReservedOverhead, map[string]interface{}{}))
+		patchSet.AddOption(patch.WithAdd(pathReservedOverhead(memoryPath), map[string]interface{}{}))
 	}
 
 	if !reservedOverheadExists || vmSpec.Domain.Memory.ReservedOverhead.MemLock == nil || *vmSpec.Domain.Memory.ReservedOverhead.MemLock != v1.MemLockRequired {
 		log.Log.V(2).Infof("Setting MemLock to Required for VM %s/%s", ar.Request.Namespace, ar.Request.Name)
-		patchSet.AddOption(patch.WithAdd(pathMemLock, v1.MemLockRequired))
+		patchSet.AddOption(patch.WithAdd(pathMemLock(memoryPath), v1.MemLockRequired))
 	}
 
 	totalOverhead := requiredOverhead.DeepCopy()
@@ -131,14 +153,13 @@ func mutateVM(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 		totalOverhead.Add(*vmSpec.Domain.Memory.ReservedOverhead.AddedOverhead)
 	}
 	log.Log.V(2).Infof("Setting vDPA AddedOverhead to %s for VM %s/%s (%d vDPA interfaces, calculated: %s)", totalOverhead.String(), ar.Request.Namespace, ar.Request.Name, vdpaCount, requiredOverhead.String())
-	patchSet.AddOption(patch.WithAdd(pathAddedOverhead, totalOverhead.String()))
+	patchSet.AddOption(patch.WithAdd(pathAddedOverhead(memoryPath), totalOverhead.String()))
 
 	patchBytes, err := patchSet.GeneratePayload()
 	if err != nil {
 		log.Log.Reason(err).Error("Failed to marshal JSON patches")
 		return allowWithoutPatch()
 	}
-
 	patchType := admissionv1.PatchTypeJSONPatch
 	return &admissionv1.AdmissionResponse{
 		Allowed:   true,
