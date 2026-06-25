@@ -149,6 +149,9 @@ cluster_down:
 cluster_sync_kubevirt:
 	./test/cluster/install_kubevirt.sh ${KUBEVIRT_SYNC_VERSION}
 
+test_integration:
+	go test -C test/integration/ -kubeconfig=${KUBECONFIG} --ginkgo.vv
+
 .PHONY: build build_sidecar build_admission_webhook build_test_device_plugin \
         clean format format_inplace lint test test_sidecar test_webhook \
         images image_sidecar image_webhook image_test_device_plugin push \
@@ -157,4 +160,4 @@ cluster_sync_kubevirt:
         build_test_cni image_test_cni push_test_cni sync_test_dependencies \
         image_test_dependencies push_test_dependencies build_test_dependencies \
         kubevirtci_init kubevirtci_update cluster_up cluster_down \
-		cluster_sync_kubevirt
+		cluster_sync_kubevirt test_integration
