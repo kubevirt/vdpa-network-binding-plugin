@@ -1,6 +1,6 @@
 module kubevirt.io/vdpa-network-binding-plugin
 
-go 1.24.0
+go 1.26.0
 
 replace (
 	k8s.io/api => k8s.io/api v0.34.2
