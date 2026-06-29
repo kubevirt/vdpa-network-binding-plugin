@@ -1,0 +1,3 @@
+[submodule "kubevirtci"]
+	path = test/kubevirtci
+	url = https://github.com/kubevirt/kubevirtci.git

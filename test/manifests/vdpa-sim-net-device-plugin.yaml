@@ -1,0 +1,68 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ${TEST_DEVICE_PLUGIN_NAME}
+  namespace: vdpa-network-binding-plugin-test-dependencies
+  labels:
+    app: ${TEST_DEVICE_PLUGIN_NAME}
+spec:
+  selector:
+    matchLabels:
+      app: ${TEST_DEVICE_PLUGIN_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${TEST_DEVICE_PLUGIN_NAME}
+    spec:
+      hostNetwork: true
+      containers:
+        - name: device-plugin
+          image: ${IMAGE_REGISTRY}/${TEST_DEVICE_PLUGIN_NAME}:${IMAGE_TAG}
+          command: ["/vdpa-sim-net-device-plugin"]
+          args:
+            - "--config"
+            - "/etc/vdpasimnet-dp/config.json"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: devinfo
+              mountPath: /var/run/k8s.cni.cncf.io/devinfo
+            - name: config
+              mountPath: /etc/vdpasimnet-dp
+              readOnly: true
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: modules
+          hostPath:
+            path: /lib/modules
+        - name: devinfo
+          hostPath:
+            path: /var/run/k8s.cni.cncf.io/devinfo
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: vdpa-sim-net-dp-config
+            items:
+              - key: "config.json"
+                path: "config.json"
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
