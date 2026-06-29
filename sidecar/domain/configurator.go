@@ -59,7 +59,7 @@ const (
 func readFileUntilNotEmpty(networkPCIMapPath string) ([]byte, error) {
 	var networkPCIMapBytes []byte
 
-	err := wait.PollImmediately(100*time.Millisecond, time.Second, func(_ context.Context) (bool, error) {
+	err := wait.PollImmediately(100*time.Millisecond, 10*time.Second, func(_ context.Context) (bool, error) {
 		var err error
 		networkPCIMapBytes, err = os.ReadFile(networkPCIMapPath)
 		return len(networkPCIMapBytes) > 0, err

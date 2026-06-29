@@ -28,6 +28,7 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
@@ -41,9 +42,24 @@ func newAdmissionReviewFromVM(vm *v1.VirtualMachine) *admissionv1.AdmissionRevie
 	By("Creating the test admissions review from the VM")
 	return &admissionv1.AdmissionReview{
 		Request: &admissionv1.AdmissionRequest{
+			Kind:      metav1.GroupVersionKind{Kind: "VirtualMachine"},
 			Namespace: "default",
 			Name:      vm.Name,
 			Object:    runtime.RawExtension{Raw: vmBytes},
+		},
+	}
+}
+
+func newAdmissionReviewFromVMI(vmi *v1.VirtualMachineInstance) *admissionv1.AdmissionReview {
+	vmiBytes, err := json.Marshal(vmi)
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	By("Creating the test admissions review from the VMI")
+	return &admissionv1.AdmissionReview{
+		Request: &admissionv1.AdmissionRequest{
+			Kind:      metav1.GroupVersionKind{Kind: "VirtualMachineInstance"},
+			Namespace: "default",
+			Name:      vmi.Name,
+			Object:    runtime.RawExtension{Raw: vmiBytes},
 		},
 	}
 }
@@ -68,7 +84,7 @@ func findPatch(patches []patch.PatchOperation, path string) *patch.PatchOperatio
 	return nil
 }
 
-var _ = Describe("vDPA Mutating Webhook", func() {
+var _ = Describe("vDPA Mutating Webhook for VMs", func() {
 	var vm *v1.VirtualMachine
 
 	BeforeEach(func() {
@@ -107,11 +123,11 @@ var _ = Describe("vDPA Mutating Webhook", func() {
 			resp := mutateVM(ar)
 			patches := getPatchesFromResponse(resp)
 
-			memLockPatch := findPatch(patches, pathMemLock)
+			memLockPatch := findPatch(patches, pathMemLock(pathMemoryVM))
 			Expect(memLockPatch).ToNot(BeNil())
 			Expect(memLockPatch.Value).To(Equal(string(v1.MemLockRequired)))
 
-			overheadPatch := findPatch(patches, pathAddedOverhead)
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVM))
 			Expect(overheadPatch).ToNot(BeNil())
 			Expect(overheadPatch.Value).To(Equal("1Gi"))
 		})
@@ -125,7 +141,7 @@ var _ = Describe("vDPA Mutating Webhook", func() {
 			resp := mutateVM(ar)
 			patches := getPatchesFromResponse(resp)
 
-			overheadPatch := findPatch(patches, pathAddedOverhead)
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVM))
 			Expect(overheadPatch).ToNot(BeNil())
 			Expect(overheadPatch.Value).To(Equal("3Gi")) // 1Gi + (2-1)*2Gi = 3Gi
 		})
@@ -142,7 +158,7 @@ var _ = Describe("vDPA Mutating Webhook", func() {
 			resp := mutateVM(ar)
 			patches := getPatchesFromResponse(resp)
 
-			overheadPatch := findPatch(patches, pathAddedOverhead)
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVM))
 			Expect(overheadPatch).ToNot(BeNil())
 			result := resource.MustParse(overheadPatch.Value.(string))
 			expected := resource.MustParse("1536Mi") // 1Gi + 512Mi
@@ -159,7 +175,7 @@ var _ = Describe("vDPA Mutating Webhook", func() {
 			resp := mutateVM(ar)
 			patches := getPatchesFromResponse(resp)
 
-			overheadPatch := findPatch(patches, pathAddedOverhead)
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVM))
 			Expect(overheadPatch).ToNot(BeNil())
 			Expect(overheadPatch.Value).To(Equal("1Gi"))
 		})
@@ -177,7 +193,119 @@ var _ = Describe("vDPA Mutating Webhook", func() {
 			resp := mutateVM(ar)
 			patches := getPatchesFromResponse(resp)
 
-			overheadPatch := findPatch(patches, pathAddedOverhead)
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVM))
+			Expect(overheadPatch).ToNot(BeNil())
+			Expect(overheadPatch.Value).To(Equal("5Gi")) // 1Gi + (2-1)*4Gi = 5Gi
+		})
+	})
+})
+
+var _ = Describe("vDPA Mutating Webhook for VMIs", func() {
+	var vmi *v1.VirtualMachineInstance
+
+	BeforeEach(func() {
+		guestMemory := resource.MustParse("2Gi")
+		vmi = &v1.VirtualMachineInstance{
+			Spec: v1.VirtualMachineInstanceSpec{
+				Domain: v1.DomainSpec{
+					Memory: &v1.Memory{
+						Guest: &guestMemory,
+					},
+				},
+			},
+		}
+	})
+
+	Context("mutateVM", func() {
+		It("should not mutate VM when no vDPA interfaces are present", func() {
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "masq-net", InterfaceBindingMethod: v1.InterfaceBindingMethod{Masquerade: &v1.InterfaceMasquerade{}}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			Expect(resp.Allowed).To(BeTrue())
+			Expect(resp.Patch).To(BeNil())
+		})
+
+		It("should set AddedOverhead=1Gi and MemLock=Required for a single vDPA interface", func() {
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "vdpa-net", Binding: &v1.PluginBinding{Name: "vdpa"}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			patches := getPatchesFromResponse(resp)
+
+			memLockPatch := findPatch(patches, pathMemLock(pathMemoryVMI))
+			Expect(memLockPatch).ToNot(BeNil())
+			Expect(memLockPatch.Value).To(Equal(string(v1.MemLockRequired)))
+
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVMI))
+			Expect(overheadPatch).ToNot(BeNil())
+			Expect(overheadPatch.Value).To(Equal("1Gi"))
+		})
+
+		It("should calculate correct overhead for multiple vDPA interfaces", func() {
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "vdpa-net1", Binding: &v1.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net2", Binding: &v1.PluginBinding{Name: "vdpa"}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			patches := getPatchesFromResponse(resp)
+
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVMI))
+			Expect(overheadPatch).ToNot(BeNil())
+			Expect(overheadPatch.Value).To(Equal("3Gi")) // 1Gi + (2-1)*2Gi = 3Gi
+		})
+
+		It("should add user-defined overhead on top of vDPA calculated overhead", func() {
+			userOverhead := resource.MustParse("512Mi")
+			vmi.Spec.Domain.Memory.ReservedOverhead = &v1.ReservedOverhead{
+				AddedOverhead: &userOverhead,
+			}
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "vdpa-net", Binding: &v1.PluginBinding{Name: "vdpa"}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			patches := getPatchesFromResponse(resp)
+
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVMI))
+			Expect(overheadPatch).ToNot(BeNil())
+			result := resource.MustParse(overheadPatch.Value.(string))
+			expected := resource.MustParse("1536Mi") // 1Gi + 512Mi
+			Expect(result.Cmp(expected)).To(BeZero())
+		})
+
+		It("should count only vDPA interfaces when mixed with non-vDPA", func() {
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "masq-net", InterfaceBindingMethod: v1.InterfaceBindingMethod{Masquerade: &v1.InterfaceMasquerade{}}},
+				{Name: "vdpa-net", Binding: &v1.PluginBinding{Name: "vdpa"}},
+				{Name: "passt-net", Binding: &v1.PluginBinding{Name: "passt"}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			patches := getPatchesFromResponse(resp)
+
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVMI))
+			Expect(overheadPatch).ToNot(BeNil())
+			Expect(overheadPatch.Value).To(Equal("1Gi"))
+		})
+
+		It("should calculate AddedOverhead using resources.requests.memory when guest memory is unset", func() {
+			vmi.Spec.Domain.Memory = &v1.Memory{}
+			vmi.Spec.Domain.Resources.Requests = map[k8sv1.ResourceName]resource.Quantity{
+				k8sv1.ResourceMemory: resource.MustParse("4Gi"),
+			}
+			vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{
+				{Name: "vdpa-net1", Binding: &v1.PluginBinding{Name: "vdpa"}},
+				{Name: "vdpa-net2", Binding: &v1.PluginBinding{Name: "vdpa"}},
+			}
+			ar := newAdmissionReviewFromVMI(vmi)
+			resp := mutateVM(ar)
+			patches := getPatchesFromResponse(resp)
+
+			overheadPatch := findPatch(patches, pathAddedOverhead(pathMemoryVMI))
 			Expect(overheadPatch).ToNot(BeNil())
 			Expect(overheadPatch.Value).To(Equal("5Gi")) // 1Gi + (2-1)*4Gi = 5Gi
 		})

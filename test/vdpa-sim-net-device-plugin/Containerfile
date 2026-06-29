@@ -1,0 +1,20 @@
+# This Containerfile is supposed to be run from the
+# vdpa-network-binding-plugin repository root dir.
+FROM quay.io/centos/centos:stream9 AS builder
+
+WORKDIR /usr/src/vdpa-network-binding-plugin
+RUN dnf update -y && dnf clean all
+RUN dnf install -y golang make git
+
+COPY . .
+RUN make clean
+RUN make build_test_device_plugin
+
+FROM quay.io/centos/centos:stream9
+
+RUN dnf update -y && dnf install -y iproute kmod && dnf clean all
+
+COPY --from=builder \
+    /usr/src/vdpa-network-binding-plugin/build/vdpa-sim-net-device-plugin /.
+
+ENTRYPOINT ["/vdpa-sim-net-device-plugin"]

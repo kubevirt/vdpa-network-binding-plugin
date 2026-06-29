@@ -1,0 +1,49 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ${TEST_CNI_NAME}-ds-amd64
+  namespace: vdpa-network-binding-plugin-test-dependencies
+  labels:
+    tier: node
+    app: ${TEST_CNI_NAME}
+spec:
+  selector:
+    matchLabels:
+      name: ${TEST_CNI_NAME}
+  template:
+    metadata:
+      labels:
+        name: ${TEST_CNI_NAME}
+        tier: node
+        app: ${TEST_CNI_NAME}
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: copy-${TEST_CNI_NAME}
+        image: ${IMAGE_REGISTRY}/${TEST_CNI_NAME}:${IMAGE_TAG}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh","-c"]
+        args:
+          - cp /vdpa-sim-net-cni /host/opt/cni/bin/vdpa-sim-net
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "50Mi"
+          limits:
+            cpu: "100m"
+            memory: "50Mi"
+        volumeMounts:
+        - name: cnibin
+          mountPath: /host/opt/cni/bin
+      volumes:
+        - name: cnibin
+          hostPath:
+            path: /opt/cni/bin

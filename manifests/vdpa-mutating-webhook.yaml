@@ -108,4 +108,4 @@ webhooks:
   - operations: ["CREATE"]
     apiGroups: [kubevirt.io]
     apiVersions: [v1]
-    resources: [virtualmachines]
+    resources: [virtualmachines, virtualmachineinstances]

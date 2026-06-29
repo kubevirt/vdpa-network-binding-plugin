@@ -1,0 +1,46 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vdpa-sim-net-dp-config
+  namespace: vdpa-network-binding-plugin-test-dependencies
+data:
+  config.json: |
+    {
+      "resources": [
+        {
+          "name": "vdpa-sim-net-one-assignable-device-1",
+          "configs": [
+            {
+              "name": "vdpaUnique0",
+              "mac": "02:01:01:01:01:01",
+              "mtu": 9000
+            }
+          ]
+        },
+        {
+          "name": "vdpa-sim-net-one-assignable-device-2",
+          "configs": [
+            {
+              "name": "vdpaUnique1",
+              "mac": "02:02:02:02:02:02"
+            }
+          ]
+        },
+        {
+          "name": "vdpa-sim-net-multiple-devices",
+          "configs": [
+            {
+              "name": "vdpaFirst",
+              "mac": "02:11:11:11:11:11",
+              "mtu": 3000
+            },
+            {
+              "name": "vdpaSecond",
+              "mac": "02:22:22:22:22:22",
+              "mtu": 3000
+            }
+          ]
+        }
+      ]
+    }
