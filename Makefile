@@ -47,10 +47,10 @@ clean:
 	git restore manifests
 
 format:
-	@gofmt -d -s -e sidecar webhook test
+	@find . -type f -name '*.go' ! -path '*/kubevirtci/*' ! -path '*/vendor/*' -print0 | xargs -0 gofmt -d -s -e
 
 format_inplace:
-	gofmt -s -e -w sidecar webhook test
+	find . -type f -name '*.go' ! -path '*/kubevirtci/*' ! -path '*/vendor/*' -print0 | xargs -0 gofmt -s -e -w
 
 lint:
 	golangci-lint run
