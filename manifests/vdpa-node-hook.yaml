@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vdpa-network-binding-plugin-node-plugin-hook
+  labels:
+    app: vdpa-network-binding-plugin-node-plugin-hook
+spec:
+  selector:
+    matchLabels:
+      app: vdpa-network-binding-plugin-node-plugin-hook
+  template:
+    metadata:
+      labels:
+        app: vdpa-network-binding-plugin-node-plugin-hook
+    spec:
+      hostPID: true
+      containers:
+      - name: vdpa-network-binding-plugin-node-plugin-hook
+        image: quay.io/kubevirt/vdpa-network-binding-node-hook:latest
+        args:
+        - --plugin-name=vdpa
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: plugin-socket
+          mountPath: /var/run/kubevirt/plugins
+        - name: kubelet-pods
+          mountPath: /pods
+          readOnly: true
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+      volumes:
+      - name: plugin-socket
+        hostPath:
+          path: /var/run/kubevirt/plugins
+          type: DirectoryOrCreate
+      - name: kubelet-pods
+        hostPath:
+          path: /var/lib/kubelet/pods
+          type: Directory
+---
+apiVersion: plugin.kubevirt.io/v1alpha1
+kind: Plugin
+metadata:
+  name: vdpa-network-binding-plugin-node-plugin-hook
+spec:
+  nodeHooks:
+  - permittedHooks:
+    - PreVMStart
+    socket: /var/run/kubevirt/plugins/vdpa-network-binding-plugin-node-plugin-hook/node.sock
+    failureStrategy: Fail
+    timeout: 10s
+  - permittedHooks:
+    - PreMigrationTarget
+    socket: /var/run/kubevirt/plugins/vdpa-network-binding-plugin-node-plugin-hook/node.sock
+    failureStrategy: Fail
+    timeout: 10s

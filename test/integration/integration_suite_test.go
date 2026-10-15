@@ -19,14 +19,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	createTestNamespace(vdpaTestNamespace, client)
-	enableReservedOverheadMemlockFeatureGate(client)
 })
 
 var _ = AfterSuite(func() {
-	client, err := kubecli.GetKubevirtClient()
-	Expect(err).ToNot(HaveOccurred())
-
-	disableReservedOverheadMemlockFeatureGate(client)
 })
 
 var _ = ReportAfterSuite("cleanup test namespace", func(report Report) {

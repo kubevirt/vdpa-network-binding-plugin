@@ -27,6 +27,7 @@ import (
 
 	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/api/migrations"
+	"kubevirt.io/api/plugin"
 
 	"kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components"
 )
@@ -78,7 +79,7 @@ func newHandlerClusterRole() *rbacv1.ClusterRole {
 					"virtualmachineinstances",
 				},
 				Verbs: []string{
-					"update", "patch", "list", "watch",
+					"update", "list", "watch",
 				},
 			},
 			{
@@ -170,13 +171,13 @@ func newHandlerClusterRole() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{
-					"apps",
+					plugin.GroupName,
 				},
 				Resources: []string{
-					"controllerrevisions",
+					"plugins",
 				},
 				Verbs: []string{
-					"get",
+					"get", "list", "watch",
 				},
 			},
 		},

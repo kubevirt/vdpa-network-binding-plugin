@@ -61,13 +61,16 @@ var vmsAlerts = []promv1.Rule{
 		},
 		Labels: map[string]string{
 			severityAlertLabelKey:        "warning",
-			operatorHealthImpactLabelKey: "none",
+			operatorHealthImpactLabelKey: "warning",
 		},
 	},
 	{
 		Alert: "VMCannotBeEvicted",
-		Expr:  intstr.FromString("kubevirt_vmi_non_evictable * on(name, namespace) group_left() kubevirt_vmi_info{phase='running'} == 1"),
-		For:   ptr.To(promv1.Duration("1m")),
+		Expr: intstr.FromString(
+			"kubevirt_vmi_non_evictable * on(name, namespace) group_left() " +
+				"topk by(name, namespace) (1, kubevirt_vmi_info{phase='running'}) == 1",
+		),
+		For: ptr.To(promv1.Duration("1m")),
 		Annotations: map[string]string{
 			descriptionAnnotationKey: "Eviction policy for VirtualMachine {{ $labels.name }} in namespace {{ $labels.namespace }} " +
 				"(on node {{ $labels.node }}) is set to Live Migration but the VM is not migratable",
@@ -107,7 +110,7 @@ var vmsAlerts = []promv1.Rule{
 	},
 	{
 		Alert: "GuestVCPUQueueHighWarning",
-		Expr:  intstr.FromString("kubevirt_vmi_guest_vcpu_queue > 10"),
+		Expr:  intstr.FromString("vmi:kubevirt_vmi_guest_queue_length:sum > 10"),
 		Annotations: map[string]string{
 			descriptionAnnotationKey: "VirtualMachineInstance {{ $labels.name }} CPU queue length > 10",
 			summaryAnnotationKey:     "Guest vCPU Queue within collection cycle > 10",
@@ -119,7 +122,7 @@ var vmsAlerts = []promv1.Rule{
 	},
 	{
 		Alert: "GuestVCPUQueueHighCritical",
-		Expr:  intstr.FromString("kubevirt_vmi_guest_vcpu_queue > 20"),
+		Expr:  intstr.FromString("vmi:kubevirt_vmi_guest_queue_length:sum > 20"),
 		Annotations: map[string]string{
 			descriptionAnnotationKey: "VirtualMachineInstance {{ $labels.name }} CPU queue length > 20",
 			summaryAnnotationKey:     "Guest vCPU Queue within collection cycle > 20",
@@ -153,7 +156,8 @@ var vmsAlerts = []promv1.Rule{
 			"sum by (name, namespace, status, node)((kubevirt_vm_info{status='starting'} == 1 " +
 				"or kubevirt_vm_info{status='stopping'} == 1 or kubevirt_vm_info{status='terminating'} == 1 " +
 				"or (kubevirt_vm_info{status_group='error'} == 1 " +
-				"and on(name, namespace) kubevirt_vmi_info) ) * on(name, namespace) group_left(node) kubevirt_vmi_info)",
+				"and on(name, namespace) kubevirt_vmi_info{phase=~'scheduled|running'}) ) " +
+				"* on(name, namespace) group_left(node) topk by(name, namespace) (1, kubevirt_vmi_info{phase=~'scheduled|running'}))",
 		),
 		For: ptr.To(promv1.Duration("5m")),
 		Annotations: map[string]string{
@@ -223,21 +227,6 @@ var vmsAlerts = []promv1.Rule{
 		},
 	},
 	{
-		Alert: "VirtualMachineInstanceHasEphemeralHotplugVolume",
-		Expr:  intstr.FromString("kubevirt_vmi_contains_ephemeral_hotplug_volume == 1"),
-		Annotations: map[string]string{
-			summaryAnnotationKey: "Virtual Machine Instance has Ephemeral Hotplug Volume(s). Ephemeral Hotplugs are deprecated and " +
-				"must be converted to persistent volumes! In a future release, feature gate `DeclarativeHotplugVolumes` will replace " +
-				"`HotplugVolumes` and as a result, any remaining ephemeral hotplug volumes will be automatically unplugged",
-			descriptionAnnotationKey: "Virtual Machine Instance {{ $labels.name }} in namespace {{ $labels.namespace }} has ephemeral " +
-				"hotplug volume(s) {{ $labels.volume_name }}.",
-		},
-		Labels: map[string]string{
-			severityAlertLabelKey:        "warning",
-			operatorHealthImpactLabelKey: "none",
-		},
-	},
-	{
 		Alert: "KubeVirtVMGuestMemoryAvailableLow",
 		Expr: intstr.FromString(
 			"((" +
@@ -255,6 +244,19 @@ var vmsAlerts = []promv1.Rule{
 		},
 		Labels: map[string]string{
 			severityAlertLabelKey:        "info",
+			operatorHealthImpactLabelKey: "none",
+		},
+	},
+	{
+		Alert: "VMNonRecoverableOSPanic",
+		Expr:  intstr.FromString(`sum by (namespace, name) (increase(kubevirt_vmi_guest_os_panic_total[24h])) > 5`),
+		For:   ptr.To(promv1.Duration("1m")),
+		Annotations: map[string]string{
+			summaryAnnotationKey:     "VM {{ $labels.name }} in namespace {{ $labels.namespace }} experienced a non-recoverable guest OS panic",
+			descriptionAnnotationKey: "The VM has experienced {{ $value }} non-recoverable guest OS panic(s) in the last 24 hours.",
+		},
+		Labels: map[string]string{
+			severityAlertLabelKey:        "critical",
 			operatorHealthImpactLabelKey: "none",
 		},
 	},

@@ -17,7 +17,7 @@
  *
  */
 
-package virt_api
+package virtapi
 
 import (
 	"github.com/rhobs/operator-observability-toolkit/pkg/operatormetrics"
@@ -36,6 +36,7 @@ func SetupMetrics() error {
 	}
 
 	return operatormetrics.RegisterMetrics(
+		componentMetrics,
 		connectionMetrics,
 		vmMetrics,
 	)

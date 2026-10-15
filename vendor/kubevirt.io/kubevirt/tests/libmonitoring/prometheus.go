@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -36,6 +36,24 @@ import (
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 )
 
+const (
+	statusSuccess                   = "success"
+	defaultGomegaOffset             = 2
+	readBufferSize                  = 1024
+	defaultAlertTimeout             = 120 * time.Second
+	defaultAlertWaitTimeout         = 5 * time.Minute
+	defaultMetricsPort              = 8443
+	prometheusPortForwardTargetPort = 9090
+)
+
+var (
+	portForwardRe = regexp.MustCompile(
+		fmt.Sprintf(`Forwarding from 127\.0\.0\.1:(\d+) -> %d`, prometheusPortForwardTargetPort),
+	)
+
+	alertRangeVectorRe = regexp.MustCompile(`\[\d+m\]`)
+)
+
 type AlertRequestResult struct {
 	Alerts prometheusv1.AlertsResult `json:"data"`
 	Status string                    `json:"status"`
@@ -60,7 +78,7 @@ func GetAlerts(cli kubecli.KubevirtClient) ([]prometheusv1.Alert, error) {
 		return nil, err
 	}
 
-	if result.Status != "success" {
+	if result.Status != statusSuccess {
 		return nil, fmt.Errorf("api request failed. result: %v", result)
 	}
 
@@ -68,20 +86,37 @@ func GetAlerts(cli kubecli.KubevirtClient) ([]prometheusv1.Alert, error) {
 }
 
 func WaitForMetricValue(client kubecli.KubevirtClient, metric string, expectedValue float64) {
-	WaitForMetricValueWithLabels(client, metric, expectedValue, nil, 2)
+	WaitForMetricValueWithLabels(client, metric, expectedValue, nil, defaultGomegaOffset)
 }
 
-func WaitForMetricValueWithLabels(client kubecli.KubevirtClient, metric string, expectedValue float64, labels map[string]string, offset int) {
+func WaitForMetricValueWithLabels(
+	client kubecli.KubevirtClient,
+	metric string,
+	expectedValue float64,
+	labels map[string]string,
+	offset int,
+) {
 	EventuallyWithOffset(offset, func() float64 {
 		i, err := GetMetricValueWithLabels(client, metric, labels)
 		if err != nil {
 			return -1
 		}
 		return i
-	}, 3*time.Minute, 1*time.Second).Should(Equal(expectedValue), "Metric %s with labels %v has incorrect value", metric, labels)
+	}, 3*time.Minute, 1*time.Second).Should(
+		Equal(expectedValue),
+		"Metric %s with labels %v did not reach the expected value %f",
+		metric, labels, expectedValue,
+	)
 }
 
-func WaitForMetricValueWithLabelsToBe(client kubecli.KubevirtClient, metric string, labels map[string]string, offset int, comparator string, expectedValue float64) {
+func WaitForMetricValueWithLabelsToBe(
+	client kubecli.KubevirtClient,
+	metric string,
+	labels map[string]string,
+	offset int,
+	comparator string,
+	expectedValue float64,
+) {
 	EventuallyWithOffset(offset, func() float64 {
 		i, err := GetMetricValueWithLabels(client, metric, labels)
 		if err != nil {
@@ -139,7 +174,7 @@ func labelsMatch(pr testing.PromResult, labels map[string]string) bool {
 }
 
 func fetchMetric(cli kubecli.KubevirtClient, query string) (*QueryRequestResult, error) {
-	bodyBytes := DoPrometheusHTTPRequest(cli, fmt.Sprintf("/query?query=%s", query))
+	bodyBytes := DoPrometheusHTTPRequest(cli, fmt.Sprintf("/query?query=%s", url.QueryEscape(query)))
 
 	var result QueryRequestResult
 	err := json.Unmarshal(bodyBytes, &result)
@@ -147,15 +182,24 @@ func fetchMetric(cli kubecli.KubevirtClient, query string) (*QueryRequestResult,
 		return nil, err
 	}
 
-	if result.Status != "success" {
+	if result.Status != statusSuccess {
 		return nil, fmt.Errorf("api request failed. result: %v", result)
 	}
 
 	return &result, nil
 }
 
-func QueryRange(cli kubecli.KubevirtClient, query string, start time.Time, end time.Time, step time.Duration) (*QueryRequestResult, error) {
-	bodyBytes := DoPrometheusHTTPRequest(cli, fmt.Sprintf("/query_range?query=%s&start=%d&end=%d&step=%d", query, start.Unix(), end.Unix(), int(step.Seconds())))
+func QueryRange(
+	cli kubecli.KubevirtClient,
+	query string,
+	start, end time.Time,
+	step time.Duration,
+) (*QueryRequestResult, error) {
+	endpoint := fmt.Sprintf(
+		"/query_range?query=%s&start=%d&end=%d&step=%d",
+		url.QueryEscape(query), start.Unix(), end.Unix(), int(step.Seconds()),
+	)
+	bodyBytes := DoPrometheusHTTPRequest(cli, endpoint)
 
 	var result QueryRequestResult
 	err := json.Unmarshal(bodyBytes, &result)
@@ -163,7 +207,7 @@ func QueryRange(cli kubecli.KubevirtClient, query string, start time.Time, end t
 		return nil, err
 	}
 
-	if result.Status != "success" {
+	if result.Status != statusSuccess {
 		return nil, fmt.Errorf("api request failed. result: %v", result)
 	}
 
@@ -171,42 +215,33 @@ func QueryRange(cli kubecli.KubevirtClient, query string, start time.Time, end t
 }
 
 func DoPrometheusHTTPRequest(cli kubecli.KubevirtClient, endpoint string) []byte {
-
-	monitoringNs := getMonitoringNs(cli)
+	monitoringNs := getMonitoringNs()
 	token := getAuthorizationToken(cli, monitoringNs)
 
 	var result []byte
-	var err error
 	if checks.IsOpenShift() {
-		url := getPrometheusURLForOpenShift()
-		resp := doHttpRequest(url, endpoint, token)
-		defer resp.Body.Close()
-		result, err = io.ReadAll(resp.Body)
-		Expect(err).NotTo(HaveOccurred())
+		promURL := getPrometheusURLForOpenShift()
+		result = doHTTPRequest(promURL, endpoint, token)
 	} else {
-		sourcePort := 4321 + rand.Intn(6000)
-		targetPort := 9090
 		Eventually(func() error {
-			_, cmd, err := clientcmd.CreateCommandWithNS(monitoringNs, "kubectl",
-				"port-forward", "service/prometheus-k8s", fmt.Sprintf("%d:%d", sourcePort, targetPort))
-			if err != nil {
-				return err
+			_, cmd, cmdErr := clientcmd.CreateCommandWithNS(monitoringNs, "kubectl",
+				"port-forward", "service/prometheus-k8s", fmt.Sprintf(":%d", prometheusPortForwardTargetPort))
+			if cmdErr != nil {
+				return cmdErr
 			}
-			stdout, err := cmd.StdoutPipe()
-			if err != nil {
-				return err
+			stdout, cmdErr := cmd.StdoutPipe()
+			if cmdErr != nil {
+				return cmdErr
 			}
-			if err := cmd.Start(); err != nil {
-				return err
+			if startErr := cmd.Start(); startErr != nil {
+				return startErr
 			}
-			WaitForPortForwardCmd(stdout, sourcePort, targetPort)
-			defer KillPortForwardCommand(cmd)
+			defer func() { _ = KillPortForwardCommand(cmd) }()
+			sourcePort := WaitForPortForwardCmd(stdout)
 
-			url := fmt.Sprintf("http://localhost:%d", sourcePort)
-			resp := doHttpRequest(url, endpoint, token)
-			defer resp.Body.Close()
-			result, err = io.ReadAll(resp.Body)
-			return err
+			promURL := fmt.Sprintf("http://localhost:%d", sourcePort)
+			result = doHTTPRequest(promURL, endpoint, token)
+			return nil
 		}, 10*time.Second, time.Second).ShouldNot(HaveOccurred())
 	}
 	return result
@@ -216,37 +251,47 @@ func getPrometheusURLForOpenShift() string {
 	var route *ocpv1.Route
 	Eventually(func() error {
 		var err error
-		route, err = kubevirt.Client().RouteClient().Routes("openshift-monitoring").Get(context.Background(), "prometheus-k8s", metav1.GetOptions{})
+		route, err = kubevirt.Client().RouteClient().Routes("openshift-monitoring").Get(
+			context.Background(), "prometheus-k8s", metav1.GetOptions{},
+		)
 		return err
 	}, 10*time.Second, time.Second).Should(Succeed())
 
 	return fmt.Sprintf("https://%s", route.Spec.Host)
 }
 
-func doHttpRequest(url string, endpoint string, token string) *http.Response {
-	var resp *http.Response
+func doHTTPRequest(promURL, endpoint, token string) []byte {
+	var result []byte
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+			ForceAttemptHTTP2: true,
 		},
 	}
 	Eventually(func() error {
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/%s", url, endpoint), nil)
+		req, err := http.NewRequestWithContext(
+			context.Background(),
+			"GET",
+			fmt.Sprintf("%s/api/v1/%s", promURL, endpoint),
+			http.NoBody,
+		)
 		if err != nil {
 			return err
 		}
 		req.Header.Add("Authorization", "Bearer "+token)
-		resp, err = client.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
-		return nil
+		result, err = io.ReadAll(resp.Body)
+		return err
 	}, 10*time.Second, 1*time.Second).Should(Not(HaveOccurred()))
 
-	return resp
+	return result
 }
 
 func getAuthorizationToken(cli kubecli.KubevirtClient, monitoringNs string) string {
@@ -282,7 +327,7 @@ func getAuthorizationToken(cli kubecli.KubevirtClient, monitoringNs string) stri
 	return token
 }
 
-func getMonitoringNs(cli kubecli.KubevirtClient) string {
+func getMonitoringNs() string {
 	if checks.IsOpenShift() {
 		return "openshift-monitoring"
 	}
@@ -290,14 +335,21 @@ func getMonitoringNs(cli kubecli.KubevirtClient) string {
 	return "monitoring"
 }
 
-func WaitForPortForwardCmd(stdout io.ReadCloser, src, dst int) {
-	Eventually(func() string {
-		tmp := make([]byte, 1024)
+// WaitForPortForwardCmd reads kubectl's stdout until it sees the "Forwarding from"
+// readiness line, then returns the OS-assigned local port number.
+// kubectl prints "Forwarding from 127.0.0.1:<localPort> -> <targetPort>" once the tunnel is ready.
+func WaitForPortForwardCmd(stdout io.ReadCloser) int {
+	var m []string
+	Eventually(func() []string {
+		tmp := make([]byte, readBufferSize)
 		_, err := stdout.Read(tmp)
 		Expect(err).NotTo(HaveOccurred())
-
-		return string(tmp)
-	}, 30*time.Second, 1*time.Second).Should(ContainSubstring(fmt.Sprintf("Forwarding from 127.0.0.1:%d -> %d", src, dst)))
+		m = portForwardRe.FindStringSubmatch(string(tmp))
+		return m
+	}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty())
+	port, err := strconv.Atoi(m[1])
+	Expect(err).NotTo(HaveOccurred())
+	return port
 }
 
 func KillPortForwardCommand(portForwardCmd *exec.Cmd) error {
@@ -305,7 +357,7 @@ func KillPortForwardCommand(portForwardCmd *exec.Cmd) error {
 		return nil
 	}
 
-	portForwardCmd.Process.Kill()
+	_ = portForwardCmd.Process.Kill()
 	_, err := portForwardCmd.Process.Wait()
 	return err
 }
@@ -330,7 +382,7 @@ func VerifyAlertExistWithCustomTime(virtClient kubecli.KubevirtClient, alertName
 }
 
 func VerifyAlertExist(virtClient kubecli.KubevirtClient, alertName string) {
-	VerifyAlertExistWithCustomTime(virtClient, alertName, 120*time.Second)
+	VerifyAlertExistWithCustomTime(virtClient, alertName, defaultAlertTimeout)
 }
 
 func WaitUntilAlertDoesNotExistWithCustomTime(virtClient kubecli.KubevirtClient, timeout time.Duration, alertNames ...string) {
@@ -347,12 +399,11 @@ func WaitUntilAlertDoesNotExistWithCustomTime(virtClient kubecli.KubevirtClient,
 }
 
 func WaitUntilAlertDoesNotExist(virtClient kubecli.KubevirtClient, alertNames ...string) {
-	WaitUntilAlertDoesNotExistWithCustomTime(virtClient, 5*time.Minute, alertNames...)
+	WaitUntilAlertDoesNotExistWithCustomTime(virtClient, defaultAlertWaitTimeout, alertNames...)
 }
 
 func ReduceAlertPendingTime(virtClient kubecli.KubevirtClient) {
 	newRules := getPrometheusAlerts(virtClient)
-	var re = regexp.MustCompile("\\[\\d+m\\]")
 
 	var gs []promv1.RuleGroup
 	zeroMinutes := promv1.Duration("0m")
@@ -363,7 +414,7 @@ func ReduceAlertPendingTime(virtClient kubecli.KubevirtClient) {
 			rule.DeepCopyInto(&r)
 			if r.Alert != "" {
 				r.For = &zeroMinutes
-				r.Expr = intstr.FromString(re.ReplaceAllString(r.Expr.String(), `[1m]`))
+				r.Expr = intstr.FromString(alertRangeVectorRe.ReplaceAllString(r.Expr.String(), `[1m]`))
 				r.Expr = intstr.FromString(strings.ReplaceAll(r.Expr.String(), ">= 300", ">= 0"))
 			}
 			rs = append(rs, r)
@@ -419,7 +470,7 @@ func GetKubevirtVMMetrics(pod *k8sv1.Pod) string {
 
 // Deprecated: Use GetKubevirtVMMetrics or grab metrics indirectly through prometheus
 func GetKubevirtVMMetricsByIP(pod *k8sv1.Pod, ip string) string {
-	metricsURL := PrepareMetricsURL(ip, 8443)
+	metricsURL := PrepareMetricsURL(ip, defaultMetricsPort)
 	stdout, stderr, err := execute.ExecuteCommandOnPodWithResults(
 		pod,
 		pod.Spec.Containers[0].Name,

@@ -45,13 +45,13 @@ import (
 	"kubevirt.io/kubevirt/pkg/storage/cbt"
 	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
 	"kubevirt.io/kubevirt/pkg/tpm"
-	"kubevirt.io/kubevirt/pkg/util"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
 const (
-	PVCPrefix = "persistent-state-for"
-	PVCSize   = "10Mi"
+	PVCPrefix  = "persistent-state-for"
+	PVCSize    = "10Mi"
+	VolumeName = PVCPrefix + "-this-vm"
 )
 
 func basePVC(vmi *corev1.VirtualMachineInstance) string {
@@ -208,9 +208,6 @@ func buildRecoveryJob(jobName, launcherImage string, migration *corev1.VirtualMa
 					RestartPolicy: v1.RestartPolicyNever,
 					SecurityContext: &v1.PodSecurityContext{
 						RunAsNonRoot: pointer.P(true),
-						RunAsUser:    pointer.P(int64(util.NonRootUID)),
-						RunAsGroup:   pointer.P(int64(util.NonRootUID)),
-						FSGroup:      pointer.P(int64(util.NonRootUID)),
 						SeccompProfile: &v1.SeccompProfile{
 							Type: v1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -261,9 +258,15 @@ func (bs *BackendStorage) labelLegacyPVC(pvc *v1.PersistentVolumeClaim, name str
 	}
 }
 
+func IsBackendStorageVolume(v corev1.VolumeStatus) bool {
+	// TODO https://github.com/kubevirt/kubevirt/issues/17369
+	// simplify to volume.Name == VolumeName
+	return strings.HasPrefix(v.Name, PVCPrefix)
+}
+
 func CurrentPVCName(vmi *corev1.VirtualMachineInstance) string {
 	for _, volume := range vmi.Status.VolumeStatus {
-		if strings.Contains(volume.Name, basePVC(vmi)) {
+		if IsBackendStorageVolume(volume) {
 			return volume.PersistentVolumeClaimInfo.ClaimName
 		}
 	}
@@ -484,7 +487,8 @@ func (bs *BackendStorage) UpdateVolumeStatus(vmi *corev1.VirtualMachineInstance,
 		vmi.Status.VolumeStatus = []corev1.VolumeStatus{}
 	}
 	for i := range vmi.Status.VolumeStatus {
-		if vmi.Status.VolumeStatus[i].Name == pvc.Name {
+		if IsBackendStorageVolume(vmi.Status.VolumeStatus[i]) {
+			vmi.Status.VolumeStatus[i].Name = VolumeName
 			if vmi.Status.VolumeStatus[i].PersistentVolumeClaimInfo == nil {
 				vmi.Status.VolumeStatus[i].PersistentVolumeClaimInfo = &corev1.PersistentVolumeClaimInfo{}
 			}
@@ -494,7 +498,7 @@ func (bs *BackendStorage) UpdateVolumeStatus(vmi *corev1.VirtualMachineInstance,
 		}
 	}
 	vmi.Status.VolumeStatus = append(vmi.Status.VolumeStatus, corev1.VolumeStatus{
-		Name: pvc.Name,
+		Name: VolumeName,
 		PersistentVolumeClaimInfo: &corev1.PersistentVolumeClaimInfo{
 			ClaimName:   pvc.Name,
 			AccessModes: pvc.Spec.AccessModes,

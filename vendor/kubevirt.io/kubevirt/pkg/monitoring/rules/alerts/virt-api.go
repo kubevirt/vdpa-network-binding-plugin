@@ -30,10 +30,37 @@ func virtAPIAlerts(namespace string) []promv1.Rule {
 	return []promv1.Rule{
 		{
 			Alert: "VirtAPIDown",
-			Expr:  intstr.FromString("kubevirt_virt_api_up == 0"),
+			Expr:  intstr.FromString("cluster:kubevirt_virt_api_pods_running:count == 0"),
 			For:   ptr.To(promv1.Duration("10m")),
 			Annotations: map[string]string{
-				summaryAnnotationKey: "All virt-api servers are down.",
+				summaryAnnotationKey: "No running virt-api pods were detected for the last 10 min.",
+			},
+			Labels: map[string]string{
+				severityAlertLabelKey:        "critical",
+				operatorHealthImpactLabelKey: "critical",
+			},
+		},
+		{
+			Alert: "LowReadyVirtAPICount",
+			Expr: intstr.FromString(
+				"cluster:kubevirt_virt_api_ready:sum < cluster:kubevirt_virt_api_pods_running:count " +
+					"and cluster:kubevirt_virt_api_ready:sum > 0",
+			),
+			For: ptr.To(promv1.Duration("10m")),
+			Annotations: map[string]string{
+				summaryAnnotationKey: "Some virt-api pods are running but not ready.",
+			},
+			Labels: map[string]string{
+				severityAlertLabelKey:        "warning",
+				operatorHealthImpactLabelKey: "warning",
+			},
+		},
+		{
+			Alert: "NoReadyVirtAPI",
+			Expr:  intstr.FromString("cluster:kubevirt_virt_api_ready:sum == 0"),
+			For:   ptr.To(promv1.Duration("10m")),
+			Annotations: map[string]string{
+				summaryAnnotationKey: "No ready virt-api was detected for the last 10 min.",
 			},
 			Labels: map[string]string{
 				severityAlertLabelKey:        "critical",
@@ -43,7 +70,7 @@ func virtAPIAlerts(namespace string) []promv1.Rule {
 		{
 			Alert: "LowVirtAPICount",
 			Expr: intstr.FromString(fmt.Sprintf(
-				"kubevirt_virt_api_up / on() kube_deployment_spec_replicas{deployment='virt-api', namespace='%s'} < 0.75", namespace,
+				"cluster:kubevirt_virt_api_up:sum / on() kube_deployment_spec_replicas{deployment='virt-api', namespace='%s'} < 0.75", namespace,
 			)),
 			For: ptr.To(promv1.Duration("60m")),
 			Annotations: map[string]string{
@@ -69,10 +96,11 @@ func virtAPIAlerts(namespace string) []promv1.Rule {
 		{
 			Alert: "KubeVirtDeprecatedAPIRequested",
 			Expr: intstr.FromString(
-				"sum by (resource,group,version) ((round(increase(kubevirt_api_request_deprecated_total{verb!~\"LIST|WATCH|DELETE\"}[10m])) > 0 and " +
-					" kubevirt_api_request_deprecated_total{verb!~\"LIST|WATCH|DELETE\"} offset 10m) or " +
-					" (kubevirt_api_request_deprecated_total{verb!~\"LIST|WATCH|DELETE\"} != 0 " +
-					" unless kubevirt_api_request_deprecated_total{verb!~\"LIST|WATCH|DELETE\"} offset 10m))",
+				"sum by (resource,group,version) (" +
+					"(round(increase(cluster:kubevirt_api_request_deprecated_total:sum{verb!~\"LIST|WATCH|DELETE\"}[10m])) > 0 and " +
+					" cluster:kubevirt_api_request_deprecated_total:sum{verb!~\"LIST|WATCH|DELETE\"} offset 10m) or " +
+					" (cluster:kubevirt_api_request_deprecated_total:sum{verb!~\"LIST|WATCH|DELETE\"} != 0 " +
+					" unless cluster:kubevirt_api_request_deprecated_total:sum{verb!~\"LIST|WATCH|DELETE\"} offset 10m))",
 			),
 			Annotations: map[string]string{
 				descriptionAnnotationKey: "Detected requests to the deprecated {{ $labels.resource }}.{{ $labels.group }}/{{ $labels.version }} API.",

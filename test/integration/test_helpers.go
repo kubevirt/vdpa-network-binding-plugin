@@ -18,7 +18,6 @@ import (
 	"kubevirt.io/client-go/kubecli"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
-	fg "kubevirt.io/kubevirt/pkg/virt-config/featuregate"
 	"kubevirt.io/kubevirt/tests/console"
 	"kubevirt.io/kubevirt/tests/libvmifact"
 	"kubevirt.io/kubevirt/tests/libvmops"
@@ -88,51 +87,6 @@ func deleteTestNamespaceAndWait(name string, client kubecli.KubevirtClient) {
 		_, err := client.CoreV1().Namespaces().Get(context.Background(), name, k8smeta.GetOptions{})
 		return k8serrors.IsNotFound(err)
 	}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(g.BeTrue())
-}
-
-func enableReservedOverheadMemlockFeatureGate(client kubecli.KubevirtClient) {
-	kv, err := client.KubeVirt("kubevirt").Get(context.Background(), "kubevirt", k8smeta.GetOptions{})
-	g.Expect(err).ToNot(g.HaveOccurred())
-
-	if kv.Spec.Configuration.DeveloperConfiguration != nil {
-		if slices.Contains(
-			kv.Spec.Configuration.DeveloperConfiguration.FeatureGates,
-			fg.ReservedOverheadMemlock,
-		) {
-			return
-		}
-	} else {
-		kv.Spec.Configuration.DeveloperConfiguration = &v1.DeveloperConfiguration{}
-	}
-
-	kv.Spec.Configuration.DeveloperConfiguration.FeatureGates = append(
-		kv.Spec.Configuration.DeveloperConfiguration.FeatureGates,
-		"ReservedOverheadMemlock",
-	)
-
-	_, err = client.KubeVirt("kubevirt").Update(context.Background(), kv, k8smeta.UpdateOptions{})
-	g.Expect(err).ToNot(g.HaveOccurred())
-}
-
-func disableReservedOverheadMemlockFeatureGate(client kubecli.KubevirtClient) {
-	kv, err := client.KubeVirt("kubevirt").Get(context.Background(), "kubevirt", k8smeta.GetOptions{})
-	g.Expect(err).ToNot(g.HaveOccurred())
-
-	if kv.Spec.Configuration.DeveloperConfiguration == nil {
-		return
-	}
-
-	i := slices.Index(kv.Spec.Configuration.DeveloperConfiguration.FeatureGates, fg.ReservedOverheadMemlock)
-	if i == -1 {
-		return
-	}
-
-	kv.Spec.Configuration.DeveloperConfiguration.FeatureGates = slices.Delete(
-		kv.Spec.Configuration.DeveloperConfiguration.FeatureGates, i, i+1,
-	)
-
-	_, err = client.KubeVirt("kubevirt").Update(context.Background(), kv, k8smeta.UpdateOptions{})
-	g.Expect(err).ToNot(g.HaveOccurred())
 }
 
 func RandomVMIName() string {

@@ -40,7 +40,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubectl/pkg/cmd/util/podcmd"
 	v1 "kubevirt.io/api/core/v1"
-	exportv1 "kubevirt.io/api/export/v1beta1"
+	exportv1 "kubevirt.io/api/export/v1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 	"kubevirt.io/client-go/precond"
@@ -59,6 +59,7 @@ import (
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
 	"kubevirt.io/kubevirt/pkg/storage/reservation"
 	"kubevirt.io/kubevirt/pkg/storage/types"
+	storageutils "kubevirt.io/kubevirt/pkg/storage/utils"
 	"kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/pkg/util/net/dns"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
@@ -66,24 +67,32 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	operatorutil "kubevirt.io/kubevirt/pkg/virt-operator/util"
+	"kubevirt.io/kubevirt/pkg/vmitrait"
 )
 
 const (
-	containerDisks   = "container-disks"
-	hotplugDisks     = "hotplug-disks"
-	hookSidecarSocks = "hook-sidecar-sockets"
-	varRun           = "/var/run"
-	virtBinDir       = "virt-bin-share-dir"
-	hotplugDisk      = "hotplug-disk"
-	virtExporter     = "virt-exporter"
+	containerDisks          = "container-disks"
+	hotplugDisks            = "hotplug-disks"
+	hookSidecarSocks        = "hook-sidecar-sockets"
+	pluginSocketsVolumeName = "kubevirt-plugin-sockets"
+	pluginSocketsDir        = "/var/run/kubevirt-plugin"
+	varRun                  = "/var/run"
+	virtBinDir              = "virt-bin-share-dir"
+	hotplugDisk             = "hotplug-disk"
+	virtExporter            = "virt-exporter"
 )
 
 const K8sDevicePrefix = "devices.kubevirt.io"
 const TunDevice = K8sDevicePrefix + "/tun"
 const VhostNetDevice = K8sDevicePrefix + "/vhost-net"
-const SevDevice = K8sDevicePrefix + "/sev"
 const VhostVsockDevice = K8sDevicePrefix + "/vhost-vsock"
 const PrDevice = K8sDevicePrefix + "/pr-helper"
+const SevDeviceName = "sev"
+const TdxDeviceName = "tdx"
+const SevDevice = K8sDevicePrefix + "/" + SevDeviceName
+const TdxDevice = K8sDevicePrefix + "/" + TdxDeviceName
+const IOMMUFDDeviceName = "iommufd"
+const IOMMUFDDevice = K8sDevicePrefix + "/" + IOMMUFDDeviceName
 
 const debugLogs = "debugLogs"
 const logVerbosity = "logVerbosity"
@@ -152,9 +161,68 @@ func isFeatureStateEnabled(fs *v1.FeatureState) bool {
 	return fs != nil && fs.Enabled != nil && *fs.Enabled
 }
 
+func setPersistentReservationAntiAffinity(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod, pvcStore cache.Store) error {
+	prLabels, err := reservation.PersistentReservationPVCLabels(vmi, pvcStore)
+	if err != nil {
+		return err
+	}
+	if len(prLabels) == 0 {
+		return nil
+	}
+
+	maps.Copy(pod.Labels, prLabels)
+
+	terms := reservation.PersistentReservationPodAntiAffinityTerms(prLabels)
+	if len(terms) == 0 {
+		return nil
+	}
+
+	if pod.Spec.Affinity == nil {
+		pod.Spec.Affinity = &k8sv1.Affinity{}
+	}
+	if pod.Spec.Affinity.PodAntiAffinity == nil {
+		pod.Spec.Affinity.PodAntiAffinity = &k8sv1.PodAntiAffinity{}
+	}
+
+	pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
+		pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+		terms...,
+	)
+
+	return nil
+}
+
 func setNodeAffinityForPod(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) {
 	setNodeAffinityForHostModelCpuModel(vmi, pod)
 	setNodeAffinityForbiddenFeaturePolicy(vmi, pod)
+}
+
+func setPreferredArchitectureAffinity(architecture string, pod *k8sv1.Pod) {
+	if architecture == "" {
+		return
+	}
+	preferredTerm := k8sv1.PreferredSchedulingTerm{
+		Weight: 100,
+		Preference: k8sv1.NodeSelectorTerm{
+			MatchExpressions: []k8sv1.NodeSelectorRequirement{
+				{
+					Key:      k8sv1.LabelArchStable,
+					Operator: k8sv1.NodeSelectorOpIn,
+					Values:   []string{strings.ToLower(architecture)},
+				},
+			},
+		},
+	}
+	if pod.Spec.Affinity == nil {
+		pod.Spec.Affinity = &k8sv1.Affinity{}
+	}
+	if pod.Spec.Affinity.NodeAffinity == nil {
+		pod.Spec.Affinity.NodeAffinity = &k8sv1.NodeAffinity{}
+	}
+	pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+		pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+		preferredTerm,
+	)
 }
 
 func setNodeAffinityForHostModelCpuModel(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) {
@@ -310,7 +378,7 @@ func computePodSecurityContext(vmi *v1.VirtualMachineInstance, seccomp *k8sv1.Se
 	// so we need to allow the NonRootUID for virtiofsd to be able to write into the PVC
 	psc.FSGroup = pointer.P(int64(util.NonRootUID))
 
-	if util.IsNonRootVMI(vmi) {
+	if vmitrait.IsNonRoot(vmi) {
 		nonRootUser := int64(util.NonRootUID)
 		psc.RunAsUser = &nonRootUser
 		psc.RunAsGroup = &nonRootUser
@@ -331,7 +399,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	var userId int64 = util.RootUser
 
-	nonRoot := util.IsNonRootVMI(vmi)
+	nonRoot := vmitrait.IsNonRoot(vmi)
 	if nonRoot {
 		userId = util.NonRootUID
 	}
@@ -415,6 +483,15 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 		if t.clusterConfig.PodSecondaryInterfaceNamingUpgradeEnabled() {
 			command = append(command, "--upgrade-ordinal-ifaces")
 		}
+		if t.clusterConfig.VGPULiveMigrationEnabled() {
+			command = append(command, "--vgpu-dedicated-hook")
+		}
+		if t.clusterConfig.VMStatsCollectorEnabled() {
+			command = append(command, "--vm-stats-collector")
+		}
+		if t.clusterConfig.FirmwareAutoSelectionEnabled() {
+			command = append(command, "--firmware-auto-selection")
+		}
 		if customDebugFilters, exists := vmi.Annotations[v1.CustomLibvirtLogFiltersAnnotation]; exists {
 			log.Log.Object(vmi).Infof("Applying custom debug filters for vmi %s: %s", vmi.Name, customDebugFilters)
 			command = append(command, "--libvirt-log-filters", customDebugFilters)
@@ -423,6 +500,10 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	if t.clusterConfig.AllowEmulation() {
 		command = append(command, "--allow-emulation")
+	}
+
+	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
+		command = append(command, "--allow-cross-arch-emulation")
 	}
 
 	if checkForKeepLauncherAfterFailure(vmi) {
@@ -660,7 +741,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			SchedulerName:                 vmi.Spec.SchedulerName,
 			Tolerations:                   vmi.Spec.Tolerations,
 			TopologySpreadConstraints:     vmi.Spec.TopologySpreadConstraints,
-			ResourceClaims:                vmi.Spec.ResourceClaims,
+			ResourceClaims:                drautil.ToPodResourceClaims(vmi.Spec.ResourceClaims),
 		},
 	}
 
@@ -681,13 +762,28 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	}
 
 	setNodeAffinityForPod(vmi, &pod)
+	if err := setPersistentReservationAntiAffinity(vmi, &pod, t.persistentVolumeClaimStore); err != nil {
+		return nil, err
+	}
 
-	serviceAccountName := serviceAccount(vmi.Spec.Volumes...)
-	if len(serviceAccountName) > 0 {
-		pod.Spec.ServiceAccountName = serviceAccountName
-		automount := true
-		pod.Spec.AutomountServiceAccountToken = &automount
-	} else if istio.ProxyInjectionEnabled(vmi) {
+	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() {
+		setPreferredArchitectureAffinity(vmi.Spec.Architecture, &pod)
+		if vmi.Spec.Architecture != "" {
+			if pod.Spec.NodeSelector == nil {
+				pod.Spec.NodeSelector = map[string]string{}
+			}
+			pod.Spec.NodeSelector[v1.VMArchLabel+vmi.Spec.Architecture] = "true"
+		}
+	}
+
+	serviceAccountVolumeName := storageutils.ServiceAccountNameFromVolumes(vmi.Spec.Volumes)
+	if vmi.Spec.ServiceAccountName != "" {
+		pod.Spec.ServiceAccountName = vmi.Spec.ServiceAccountName
+	} else if serviceAccountVolumeName != "" {
+		pod.Spec.ServiceAccountName = serviceAccountVolumeName
+	}
+
+	if serviceAccountVolumeName != "" || istio.ProxyInjectionEnabled(vmi) {
 		automount := true
 		pod.Spec.AutomountServiceAccountToken = &automount
 	} else {
@@ -759,6 +855,10 @@ func (t *TemplateService) newNodeSelectorRenderer(vmi *v1.VirtualMachineInstance
 		opts = append(opts, WithTDXSelector())
 	}
 
+	if t.clusterConfig.CrossArchitectureVirtualizationEnabled() && vmi.Spec.Architecture != "" {
+		opts = append(opts, WithoutNativeArchSelector())
+	}
+
 	return NewNodeSelectorRenderer(
 		vmi.Spec.NodeSelector,
 		t.clusterConfig.GetNodeSelectors(),
@@ -775,14 +875,23 @@ func initContainerVolumeMount() k8sv1.VolumeMount {
 }
 
 func newSidecarContainerRenderer(sidecarName string, vmiSpec *v1.VirtualMachineInstance, resources k8sv1.ResourceRequirements, requestedHookSidecar hooks.HookSidecar, userId int64) *ContainerSpecRenderer {
+	envVars := []k8sv1.EnvVar{
+		{
+			Name:  hooks.ContainerNameEnvVar,
+			Value: sidecarName,
+		},
+	}
+	if requestedHookSidecar.NetworkBindingPluginName != "" {
+		envVars = append(envVars, k8sv1.EnvVar{
+			Name:  hooks.NetworkBindingPluginNameEnvVar,
+			Value: requestedHookSidecar.NetworkBindingPluginName,
+		})
+	}
+
 	sidecarOpts := []Option{
 		WithResourceRequirements(resources),
 		WithArgs(requestedHookSidecar.Args),
-		WithExtraEnvVars([]k8sv1.EnvVar{
-			k8sv1.EnvVar{
-				Name:  hooks.ContainerNameEnvVar,
-				Value: sidecarName,
-			}}),
+		WithExtraEnvVars(envVars),
 	}
 
 	var mounts []k8sv1.VolumeMount
@@ -798,7 +907,7 @@ func newSidecarContainerRenderer(sidecarName string, vmiSpec *v1.VirtualMachineI
 	}
 	sidecarOpts = append(sidecarOpts, WithVolumeMounts(mounts...))
 
-	if util.IsNonRootVMI(vmiSpec) {
+	if vmitrait.IsNonRoot(vmiSpec) {
 		sidecarOpts = append(sidecarOpts, WithNonRoot(userId))
 		sidecarOpts = append(sidecarOpts, WithDropALLCapabilities())
 	}
@@ -821,7 +930,7 @@ func (t *TemplateService) newInitContainerRenderer(vmiSpec *v1.VirtualMachineIns
 		WithNoCapabilities(),
 	}
 
-	if util.IsNonRootVMI(vmiSpec) {
+	if vmitrait.IsNonRoot(vmiSpec) {
 		cpInitContainerOpts = append(cpInitContainerOpts, WithNonRoot(userId))
 	}
 
@@ -837,7 +946,7 @@ func (t *TemplateService) newContainerSpecRenderer(vmi *v1.VirtualMachineInstanc
 		WithPorts(vmi),
 		WithCapabilities(vmi),
 	}
-	if util.IsNonRootVMI(vmi) {
+	if vmitrait.IsNonRoot(vmi) {
 		computeContainerOpts = append(computeContainerOpts, WithNonRoot(userId))
 		computeContainerOpts = append(computeContainerOpts, WithDropALLCapabilities())
 	}
@@ -868,6 +977,9 @@ func (t *TemplateService) newVolumeRenderer(vmi *v1.VirtualMachineInstance, imag
 	}
 	if len(requestedHookSidecarList) != 0 {
 		volumeOpts = append(volumeOpts, withSidecarVolumes(requestedHookSidecarList))
+	}
+	if t.clusterConfig.PluginsEnabled() {
+		volumeOpts = append(volumeOpts, withPluginSocketVolume())
 	}
 
 	if hasHugePages(vmi) {
@@ -1548,8 +1660,15 @@ func (t *TemplateService) VMIResourcePredicates(vmi *v1.VirtualMachineInstance, 
 			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
 				return t.clusterConfig.HostDevicesWithDRAEnabled() && isHostDevVMIDRA(vmi)
 			}, WithHostDevicesDRA(vmi.Spec.Domain.Devices.HostDevices)),
+			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
+				return t.clusterConfig.NetworkDevicesWithDRAGateEnabled() && vmispec.HasDRANetwork(vmi.Spec.Networks)
+			}, WithNetworksDRA(vmi.Spec.Networks)),
 			NewVMIResourceRule(util.IsSEVVMI, WithSEV()),
+			NewVMIResourceRule(util.IsTDXVMI, WithTDX()),
 			NewVMIResourceRule(reservation.HasVMIPersistentReservation, WithPersistentReservation()),
+			NewVMIResourceRule(func(vmi *v1.VirtualMachineInstance) bool {
+				return t.clusterConfig.IOMMUFDEnabled()
+			}, WithIOMMUFD()),
 		},
 	}
 }
