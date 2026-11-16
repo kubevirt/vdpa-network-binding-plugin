@@ -1,0 +1,6 @@
+version: "2"
+
+run:
+  skip-dirs:
+    - vendor
+    - test/kubevirtci
