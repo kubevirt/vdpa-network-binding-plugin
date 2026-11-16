@@ -7,18 +7,7 @@ github.com/beorn7/perks/quantile
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/cilium/ebpf v0.11.0
-## explicit; go 1.19
-github.com/cilium/ebpf
-github.com/cilium/ebpf/asm
-github.com/cilium/ebpf/btf
-github.com/cilium/ebpf/internal
-github.com/cilium/ebpf/internal/kconfig
-github.com/cilium/ebpf/internal/sys
-github.com/cilium/ebpf/internal/tracefs
-github.com/cilium/ebpf/internal/unix
-github.com/cilium/ebpf/link
-# github.com/containernetworking/cni v1.2.3
+# github.com/containernetworking/cni v1.3.0
 ## explicit; go 1.21
 github.com/containernetworking/cni/libcni
 github.com/containernetworking/cni/pkg/invoke
@@ -32,12 +21,15 @@ github.com/containernetworking/cni/pkg/types/create
 github.com/containernetworking/cni/pkg/types/internal
 github.com/containernetworking/cni/pkg/utils
 github.com/containernetworking/cni/pkg/version
-# github.com/containernetworking/plugins v1.5.1
-## explicit; go 1.20
+# github.com/containernetworking/plugins v1.7.1
+## explicit; go 1.23.0
 github.com/containernetworking/plugins/pkg/ns
 github.com/containernetworking/plugins/pkg/utils/buildversion
-# github.com/coreos/go-systemd/v22 v22.5.0
-## explicit; go 1.12
+# github.com/coreos/go-semver v0.3.1
+## explicit; go 1.8
+github.com/coreos/go-semver/semver
+# github.com/coreos/go-systemd/v22 v22.6.0
+## explicit; go 1.23
 github.com/coreos/go-systemd/v22/dbus
 # github.com/cyphar/filepath-securejoin v0.6.0
 ## explicit; go 1.18
@@ -172,13 +164,16 @@ github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1
 # github.com/mitchellh/go-ps v0.0.0-20190716172923-621e5597135b
 ## explicit
 github.com/mitchellh/go-ps
-# github.com/moby/spdystream v0.5.0
+# github.com/moby/spdystream v0.5.1
 ## explicit; go 1.13
 github.com/moby/spdystream
 github.com/moby/spdystream/spdy
 # github.com/moby/sys/mountinfo v0.7.2
 ## explicit; go 1.17
 github.com/moby/sys/mountinfo
+# github.com/moby/sys/userns v0.1.0
+## explicit; go 1.21
+github.com/moby/sys/userns
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 ## explicit
 github.com/modern-go/concurrent
@@ -230,24 +225,14 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
-# github.com/opencontainers/runc v1.1.14
-## explicit; go 1.18
-github.com/opencontainers/runc/libcontainer/cgroups
-github.com/opencontainers/runc/libcontainer/cgroups/devices
-github.com/opencontainers/runc/libcontainer/cgroups/ebpf
-github.com/opencontainers/runc/libcontainer/cgroups/ebpf/devicefilter
-github.com/opencontainers/runc/libcontainer/cgroups/fs
-github.com/opencontainers/runc/libcontainer/cgroups/fs2
-github.com/opencontainers/runc/libcontainer/cgroups/fscommon
-github.com/opencontainers/runc/libcontainer/configs
-github.com/opencontainers/runc/libcontainer/devices
-github.com/opencontainers/runc/libcontainer/system
-github.com/opencontainers/runc/libcontainer/user
-github.com/opencontainers/runc/libcontainer/userns
-github.com/opencontainers/runc/libcontainer/utils
-# github.com/opencontainers/runtime-spec v1.2.0
-## explicit
-github.com/opencontainers/runtime-spec/specs-go
+# github.com/opencontainers/cgroups v0.0.6
+## explicit; go 1.23.0
+github.com/opencontainers/cgroups
+github.com/opencontainers/cgroups/devices/config
+github.com/opencontainers/cgroups/fs
+github.com/opencontainers/cgroups/fs2
+github.com/opencontainers/cgroups/fscommon
+github.com/opencontainers/cgroups/internal/path
 # github.com/openshift/api v0.0.0 => github.com/openshift/api v0.0.0-20210105115604-44119421ec6b
 ## explicit; go 1.15
 github.com/openshift/api/route/v1
@@ -299,11 +284,11 @@ github.com/sirupsen/logrus
 # github.com/spf13/pflag v1.0.10
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/vishvananda/netlink v1.3.0
+# github.com/vishvananda/netlink v1.3.1
 ## explicit; go 1.12
 github.com/vishvananda/netlink
 github.com/vishvananda/netlink/nl
-# github.com/vishvananda/netns v0.0.4
+# github.com/vishvananda/netns v0.0.5
 ## explicit; go 1.17
 github.com/vishvananda/netns
 # github.com/x448/float16 v0.8.4
@@ -327,11 +312,6 @@ golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-## explicit; go 1.20
-golang.org/x/exp/constraints
-golang.org/x/exp/maps
-golang.org/x/exp/slices
 # golang.org/x/mod v0.32.0
 ## explicit; go 1.24.0
 golang.org/x/mod/semver
@@ -981,7 +961,7 @@ k8s.io/kubectl/pkg/cmd/util/podcmd
 # k8s.io/kubelet v0.36.2
 ## explicit; go 1.26.0
 k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1
-# k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
+# k8s.io/utils v0.0.0-20260319190234-28399d86e0b5
 ## explicit; go 1.23
 k8s.io/utils/buffer
 k8s.io/utils/clock
@@ -992,7 +972,7 @@ k8s.io/utils/net
 k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/trace
-# kubevirt.io/api v1.8.1
+# kubevirt.io/api v1.9.0
 ## explicit; go 1.24.0
 kubevirt.io/api/backup
 kubevirt.io/api/backup/v1alpha1
@@ -1002,19 +982,21 @@ kubevirt.io/api/clone/v1beta1
 kubevirt.io/api/core
 kubevirt.io/api/core/v1
 kubevirt.io/api/export
-kubevirt.io/api/export/v1alpha1
+kubevirt.io/api/export/v1
 kubevirt.io/api/export/v1beta1
 kubevirt.io/api/instancetype
 kubevirt.io/api/instancetype/v1beta1
 kubevirt.io/api/migrations
 kubevirt.io/api/migrations/v1alpha1
+kubevirt.io/api/plugin
+kubevirt.io/api/plugin/v1alpha1
 kubevirt.io/api/pool
 kubevirt.io/api/pool/v1alpha1
 kubevirt.io/api/pool/v1beta1
 kubevirt.io/api/snapshot
 kubevirt.io/api/snapshot/v1alpha1
 kubevirt.io/api/snapshot/v1beta1
-# kubevirt.io/client-go v1.8.1
+# kubevirt.io/client-go v1.9.0
 ## explicit; go 1.24.0
 kubevirt.io/client-go/containerizeddataimporter
 kubevirt.io/client-go/containerizeddataimporter/scheme
@@ -1030,10 +1012,11 @@ kubevirt.io/client-go/kubevirt/typed/backup/v1alpha1
 kubevirt.io/client-go/kubevirt/typed/clone/v1alpha1
 kubevirt.io/client-go/kubevirt/typed/clone/v1beta1
 kubevirt.io/client-go/kubevirt/typed/core/v1
-kubevirt.io/client-go/kubevirt/typed/export/v1alpha1
+kubevirt.io/client-go/kubevirt/typed/export/v1
 kubevirt.io/client-go/kubevirt/typed/export/v1beta1
 kubevirt.io/client-go/kubevirt/typed/instancetype/v1beta1
 kubevirt.io/client-go/kubevirt/typed/migrations/v1alpha1
+kubevirt.io/client-go/kubevirt/typed/plugin/v1alpha1
 kubevirt.io/client-go/kubevirt/typed/pool/v1alpha1
 kubevirt.io/client-go/kubevirt/typed/pool/v1beta1
 kubevirt.io/client-go/kubevirt/typed/snapshot/v1alpha1
@@ -1060,8 +1043,8 @@ kubevirt.io/containerized-data-importer-api/pkg/apis/upload/v1beta1
 # kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4
 ## explicit; go 1.17
 kubevirt.io/controller-lifecycle-operator-sdk/api
-# kubevirt.io/kubevirt v1.8.1
-## explicit; go 1.24.0
+# kubevirt.io/kubevirt v1.9.0
+## explicit; go 1.26.0
 kubevirt.io/kubevirt/pkg/apimachinery
 kubevirt.io/kubevirt/pkg/apimachinery/patch
 kubevirt.io/kubevirt/pkg/apimachinery/wait
@@ -1093,7 +1076,6 @@ kubevirt.io/kubevirt/pkg/hypervisor
 kubevirt.io/kubevirt/pkg/hypervisor/common
 kubevirt.io/kubevirt/pkg/hypervisor/kvm
 kubevirt.io/kubevirt/pkg/hypervisor/mshv
-kubevirt.io/kubevirt/pkg/ignition
 kubevirt.io/kubevirt/pkg/instancetype/apply
 kubevirt.io/kubevirt/pkg/instancetype/compatibility
 kubevirt.io/kubevirt/pkg/instancetype/conflict
@@ -1105,6 +1087,7 @@ kubevirt.io/kubevirt/pkg/libvmi
 kubevirt.io/kubevirt/pkg/libvmi/cloudinit
 kubevirt.io/kubevirt/pkg/monitoring/metrics/common/client
 kubevirt.io/kubevirt/pkg/monitoring/metrics/common/labels
+kubevirt.io/kubevirt/pkg/monitoring/metrics/common/vmisync
 kubevirt.io/kubevirt/pkg/monitoring/metrics/common/workqueue
 kubevirt.io/kubevirt/pkg/monitoring/metrics/testing
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-api
@@ -1112,6 +1095,8 @@ kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-controller
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/collector
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/domainstats
+kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/gpuinfo
+kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/gpuinfo/podresources
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/migrationdomainstats
 kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-operator
 kubevirt.io/kubevirt/pkg/monitoring/rules
@@ -1130,6 +1115,7 @@ kubevirt.io/kubevirt/pkg/storage/backend-storage
 kubevirt.io/kubevirt/pkg/storage/cbt
 kubevirt.io/kubevirt/pkg/storage/reservation
 kubevirt.io/kubevirt/pkg/storage/types
+kubevirt.io/kubevirt/pkg/storage/utils
 kubevirt.io/kubevirt/pkg/testutils
 kubevirt.io/kubevirt/pkg/tpm
 kubevirt.io/kubevirt/pkg/unsafepath
@@ -1153,23 +1139,16 @@ kubevirt.io/kubevirt/pkg/virt-handler/cmd-client
 kubevirt.io/kubevirt/pkg/virt-handler/isolation
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api/arch-defaulter
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/arch
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/compute
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/iothreads
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/metadata
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/network
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/storage
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/types
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/vcpu
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/virtio
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device
-kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/launchsecurity
 kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/stats
 kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components
 kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/rbac
 kubevirt.io/kubevirt/pkg/virt-operator/resource/placement
 kubevirt.io/kubevirt/pkg/virt-operator/util
 kubevirt.io/kubevirt/pkg/virtiofs
+kubevirt.io/kubevirt/pkg/vmitrait
 kubevirt.io/kubevirt/tests/clientcmd
 kubevirt.io/kubevirt/tests/console
 kubevirt.io/kubevirt/tests/containerdisk
@@ -1181,6 +1160,7 @@ kubevirt.io/kubevirt/tests/framework/cleanup
 kubevirt.io/kubevirt/tests/framework/kubevirt
 kubevirt.io/kubevirt/tests/framework/matcher
 kubevirt.io/kubevirt/tests/framework/matcher/helper
+kubevirt.io/kubevirt/tests/libhypervisor
 kubevirt.io/kubevirt/tests/libinfra
 kubevirt.io/kubevirt/tests/libkubevirt
 kubevirt.io/kubevirt/tests/libkubevirt/config
@@ -1197,14 +1177,28 @@ kubevirt.io/kubevirt/tests/libvmops
 kubevirt.io/kubevirt/tests/libwait
 kubevirt.io/kubevirt/tests/testsuite
 kubevirt.io/kubevirt/tests/watcher
-# libvirt.org/go/libvirtxml v1.11000.1
+# kubevirt.io/virt-template-api v0.2.0
+## explicit; go 1.24.0
+kubevirt.io/virt-template-api/core
+kubevirt.io/virt-template-api/core/subresourcesv1alpha1
+kubevirt.io/virt-template-api/core/subresourcesv1beta1
+kubevirt.io/virt-template-api/core/v1alpha1
+kubevirt.io/virt-template-api/core/v1beta1
+# kubevirt.io/virt-template-client-go v0.2.0
+## explicit; go 1.24.0
+kubevirt.io/virt-template-client-go/virttemplate
+kubevirt.io/virt-template-client-go/virttemplate/scheme
+kubevirt.io/virt-template-client-go/virttemplate/typed/core/v1alpha1
+kubevirt.io/virt-template-client-go/virttemplate/typed/core/v1beta1
+# libvirt.org/go/libvirtxml v1.12002.0
 ## explicit; go 1.11
 libvirt.org/go/libvirtxml
-# sigs.k8s.io/controller-runtime v0.22.4
+# sigs.k8s.io/controller-runtime v0.22.5
 ## explicit; go 1.24.0
 sigs.k8s.io/controller-runtime/pkg/controller/priorityqueue
 sigs.k8s.io/controller-runtime/pkg/internal/metrics
 sigs.k8s.io/controller-runtime/pkg/metrics
+sigs.k8s.io/controller-runtime/pkg/scheme
 # sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 ## explicit; go 1.23
 sigs.k8s.io/json
