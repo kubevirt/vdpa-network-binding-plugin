@@ -80,7 +80,7 @@ with the following environment variables:
 ```
 export KUBEVIRT_PROVIDER=k8s-1.35
 export KUBEVIRT_NUM_NODES=3
-export KUBEVIRT_WITH_MULTUS=true
+export KUBEVIRT_WITH_CNAO=true
 export KUBEVIRT_DEPLOY_NETWORK_RESOURCES_INJECTOR=true
 ```
 
@@ -110,7 +110,7 @@ By default, it will configure the following environment variables:
 ```
 export KUBEVIRT_PROVIDER=k8s-1.35
 export KUBEVIRT_NUM_NODES=2
-export KUBEVIRT_WITH_MULTUS=true
+export KUBEVIRT_WITH_CNAO=true
 export KUBEVIRT_DEPLOY_NETWORK_RESOURCES_INJECTOR=true
 ```
 
