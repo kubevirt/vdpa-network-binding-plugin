@@ -28,16 +28,18 @@ import (
 type ContainerDisk string
 
 const (
+	// Deprecated: Use ContainerDiskAlpine or ContainerDiskAlpineTestTooling instead. See https://github.com/kubevirt/kubevirt/issues/15043
 	ContainerDiskCirrosCustomLocation ContainerDisk = "cirros-custom"
-	ContainerDiskCirros               ContainerDisk = "cirros"
-	ContainerDiskAlpine               ContainerDisk = "alpine"
-	ContainerDiskAlpineTestTooling    ContainerDisk = "alpine-with-test-tooling"
-	ContainerDiskFedoraTestTooling    ContainerDisk = "fedora-with-test-tooling"
-	ContainerDiskVirtio               ContainerDisk = "virtio-container-disk"
-	ContainerDiskEmpty                ContainerDisk = "empty"
-	ContainerDiskFedoraRealtime       ContainerDisk = "fedora-realtime"
-	KernelBoot                        ContainerDisk = "alpine-ext-kernel-boot-demo"
-	KernelBootS390xGuestless          ContainerDisk = "s390x-guestless-kernel"
+	// Deprecated: Use ContainerDiskAlpine or ContainerDiskAlpineTestTooling instead. See https://github.com/kubevirt/kubevirt/issues/15043
+	ContainerDiskCirros            ContainerDisk = "cirros"
+	ContainerDiskAlpine            ContainerDisk = "alpine"
+	ContainerDiskAlpineTestTooling ContainerDisk = "alpine-with-test-tooling"
+	ContainerDiskFedoraTestTooling ContainerDisk = "fedora-with-test-tooling"
+	ContainerDiskVirtio            ContainerDisk = "virtio-container-disk"
+	ContainerDiskEmpty             ContainerDisk = "empty"
+	ContainerDiskFedoraRealtime    ContainerDisk = "fedora-realtime"
+	KernelBoot                     ContainerDisk = "alpine-ext-kernel-boot-demo"
+	KernelBootS390xGuestless       ContainerDisk = "s390x-guestless-kernel"
 )
 
 const (
@@ -53,6 +55,10 @@ const (
 // Use the ContainerDisk* constants as input values.
 func ContainerDiskFor(name ContainerDisk) string {
 	return ContainerDiskFromRegistryFor(flags.KubeVirtUtilityRepoPrefix, name)
+}
+
+func ContainerDiskForArch(name ContainerDisk, guestArch string) string {
+	return fmt.Sprintf("%s-%s", ContainerDiskFor(name), guestArch)
 }
 
 func DataVolumeImportUrlForContainerDisk(name ContainerDisk) string {

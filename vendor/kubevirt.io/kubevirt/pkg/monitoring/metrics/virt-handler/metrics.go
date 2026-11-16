@@ -16,7 +16,7 @@
  * Copyright The KubeVirt Authors.
  */
 
-package virt_handler
+package virthandler
 
 import (
 	"github.com/rhobs/operator-observability-toolkit/pkg/operatormetrics"
@@ -24,12 +24,17 @@ import (
 	"libvirt.org/go/libvirtxml"
 
 	"kubevirt.io/kubevirt/pkg/monitoring/metrics/common/client"
+	"kubevirt.io/kubevirt/pkg/monitoring/metrics/common/vmisync"
 	"kubevirt.io/kubevirt/pkg/monitoring/metrics/common/workqueue"
 	"kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/domainstats"
+	"kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/gpuinfo"
 	"kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/migrationdomainstats"
 )
 
-func SetupMetrics(nodeName string, MaxRequestsInFlight int, vmiInformer cache.SharedIndexInformer, machines []libvirtxml.CapsGuestMachine) error {
+func SetupMetrics(
+	nodeName string, maxRequestsInFlight int,
+	vmiInformer cache.SharedIndexInformer, machines []libvirtxml.CapsGuestMachine,
+) error {
 	if err := workqueue.SetupMetrics(); err != nil {
 		return err
 	}
@@ -38,13 +43,18 @@ func SetupMetrics(nodeName string, MaxRequestsInFlight int, vmiInformer cache.Sh
 		return err
 	}
 
-	if err := operatormetrics.RegisterMetrics(versionMetrics, machineTypeMetrics); err != nil {
+	if err := vmisync.SetupMetrics(); err != nil {
+		return err
+	}
+
+	if err := operatormetrics.RegisterMetrics(componentMetrics, versionMetrics, machineTypeMetrics, guestPanicMetrics); err != nil {
 		return err
 	}
 	SetVersionInfo()
 	ReportDeprecatedMachineTypes(machines, nodeName)
 
-	domainstats.SetupDomainStatsCollector(MaxRequestsInFlight, vmiInformer)
+	domainstats.SetupDomainStatsCollector(maxRequestsInFlight, vmiInformer)
+	gpuinfo.Setup(nodeName)
 
 	if err := migrationdomainstats.SetupMigrationStatsCollector(vmiInformer); err != nil {
 		return err
@@ -54,6 +64,7 @@ func SetupMetrics(nodeName string, MaxRequestsInFlight int, vmiInformer cache.Sh
 		domainstats.Collector,
 		domainstats.DomainDirtyRateStatsCollector,
 		migrationdomainstats.MigrationStatsCollector,
+		gpuinfo.Collector,
 	)
 }
 

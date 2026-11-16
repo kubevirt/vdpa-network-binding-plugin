@@ -1,0 +1,18 @@
+# This Containerfile is supposed to be run from the
+# vdpa-network-binding-plugin repository root dir.
+FROM quay.io/centos/centos:stream9 AS builder
+
+WORKDIR /usr/src/vdpa_network_binding_nodehook
+RUN dnf update -y && dnf clean all
+RUN dnf install -y golang make git
+
+COPY . .
+RUN make clean
+RUN make NODEHOOK_NAME=vdpa-network-binding-node-hook build_nodehook
+
+FROM gcr.io/distroless/static
+
+COPY --from=builder \
+    /usr/src/vdpa_network_binding_nodehook/build/vdpa-network-binding-node-hook /.
+
+ENTRYPOINT ["/vdpa-network-binding-node-hook", "serve"]

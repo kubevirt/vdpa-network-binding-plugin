@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-semver/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -36,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	v1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/storage/cbt"
@@ -107,26 +109,29 @@ func AdjustKubeVirtResource() {
 	kv.Spec.Configuration.DeveloperConfiguration.FeatureGates = append(kv.Spec.Configuration.DeveloperConfiguration.FeatureGates,
 		featuregate.IgnitionGate,
 		featuregate.SidecarGate,
-		featuregate.SnapshotGate,
 		featuregate.IncrementalBackupGate,
 		featuregate.HostDiskGate,
 		featuregate.VirtIOFSStorageVolumeGate,
 		featuregate.DownwardMetricsFeatureGate,
-		featuregate.ExpandDisksGate,
 		featuregate.WorkloadEncryptionSEV,
-		featuregate.VMExportGate,
-		featuregate.KubevirtSeccompProfile,
 		featuregate.ObjectGraph,
 		featuregate.DeclarativeHotplugVolumesGate,
-		featuregate.NodeRestrictionGate,
 		featuregate.DecentralizedLiveMigration,
-		featuregate.PanicDevicesGate,
-		featuregate.VideoConfig,
 		featuregate.UtilityVolumesGate,
-		featuregate.MigrationPriorityQueue,
 		featuregate.RebootPolicy,
 		featuregate.ContainerPathVolumesGate,
 	)
+
+	// ImageVolume is enabled by default for k8s 1.35+ (image volume feature gate in kubelet).
+	// Disable it on older clusters to avoid CI failures.
+	k8sVersion, err := checks.GetKubernetesVersion()
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	if semver.New(k8sVersion).LessThan(*semver.New("1.35.0")) {
+		kv.Spec.Configuration.DeveloperConfiguration.DisabledFeatureGates = append(
+			kv.Spec.Configuration.DeveloperConfiguration.DisabledFeatureGates,
+			featuregate.ImageVolume,
+		)
+	}
 	kv.Spec.Configuration.ChangedBlockTrackingLabelSelectors = &v1.ChangedBlockTrackingSelectors{
 		VirtualMachineLabelSelector: &metav1.LabelSelector{
 			MatchLabels: cbt.CBTLabel,
@@ -148,9 +153,15 @@ func AdjustKubeVirtResource() {
 	Expect(err).ToNot(HaveOccurred())
 	KubeVirtDefaultConfig = adjustedKV.Spec.Configuration
 	if checks.HasFeature(featuregate.CPUManager) {
-		// CPUManager is not enabled in the control-plane node(s)
+		// CPUManager is typically not enabled in the control-plane node(s)
 		nodes, err := virtClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{LabelSelector: "!node-role.kubernetes.io/control-plane"})
 		Expect(err).NotTo(HaveOccurred())
+		// This case could happen in the case of single node clusters (like OpenShift SNO)
+		if len(nodes.Items) == 0 {
+			log.Log.Info("No non-control-plane nodes found. This shouldn't happen unless this is a single-node cluster. Falling back to listing nodes labeled as `worker`.")
+			nodes, err = virtClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/worker"})
+			Expect(err).NotTo(HaveOccurred())
+		}
 		waitForSchedulableNodesWithCPUManager(len(nodes.Items))
 	}
 }

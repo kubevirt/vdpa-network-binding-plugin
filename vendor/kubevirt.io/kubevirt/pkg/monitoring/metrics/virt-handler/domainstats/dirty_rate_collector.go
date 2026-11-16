@@ -26,17 +26,15 @@ import (
 	"kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/collector"
 )
 
-var (
-	DomainDirtyRateStatsCollector = operatormetrics.Collector{
-		Metrics:         domainStatsMetrics(dirtyRateMetrics{}),
-		CollectCallback: domainDirtyRateStatsCollectorCallback,
-	}
-)
+var DomainDirtyRateStatsCollector = operatormetrics.Collector{
+	Metrics:         domainStatsMetrics(dirtyRateMetrics{}),
+	CollectCallback: domainDirtyRateStatsCollectorCallback,
+}
 
 func domainDirtyRateStatsCollectorCallback() []operatormetrics.CollectorResult {
 	cachedObjs := settings.vmiInformer.GetStore().List()
 	if len(cachedObjs) == 0 {
-		log.Log.V(4).Infof("No VMIs detected")
+		log.Log.V(logVerbosityDebug).Infof("No VMIs detected")
 		return []operatormetrics.CollectorResult{}
 	}
 
@@ -50,9 +48,13 @@ func domainDirtyRateStatsCollectorCallback() []operatormetrics.CollectorResult {
 	return execDomainDirtyRateStatsCollector(concCollector, vmis)
 }
 
-func execDomainDirtyRateStatsCollector(concCollector collector.Collector, vmis []*k6tv1.VirtualMachineInstance) []operatormetrics.CollectorResult {
-	scraper := NewDomainsDirtyRateStatsScraper(len(vmis))
-	go concCollector.Collect(vmis, scraper, PrometheusCollectionTimeout)
+func execDomainDirtyRateStatsCollector(
+	concCollector collector.Collector, vmis []*k6tv1.VirtualMachineInstance,
+) []operatormetrics.CollectorResult {
+	eligible := filterDirtyRateEligible(vmis)
+
+	scraper := NewDomainsDirtyRateStatsScraper(len(eligible))
+	go concCollector.Collect(eligible, scraper, PrometheusCollectionTimeout)
 
 	var crs []operatormetrics.CollectorResult
 
@@ -62,4 +64,21 @@ func execDomainDirtyRateStatsCollector(concCollector collector.Collector, vmis [
 	}
 
 	return crs
+}
+
+// StartDirtyRateCalc requires a running guest and conflicts with an active
+// migration (which already provides MemDirtyRate via DomainJobInfo).
+// StartTimestamp distinguishes an active migration from pending/scheduling.
+func filterDirtyRateEligible(vmis []*k6tv1.VirtualMachineInstance) []*k6tv1.VirtualMachineInstance {
+	var eligible []*k6tv1.VirtualMachineInstance
+	for _, vmi := range vmis {
+		if vmi.Status.Phase != k6tv1.Running {
+			continue
+		}
+		if ms := vmi.Status.MigrationState; ms != nil && ms.StartTimestamp != nil && !ms.Completed && !ms.Failed {
+			continue
+		}
+		eligible = append(eligible, vmi)
+	}
+	return eligible
 }
